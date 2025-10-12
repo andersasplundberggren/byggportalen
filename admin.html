@@ -10,16 +10,11 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Tailwind (CDN för PoC) -->
+  <!-- Tailwind (CDN för POC) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      background: #f0f7ff; /* fallback */
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
     .line-clamp-3 {
@@ -36,29 +31,26 @@
     // =========================
     // KONFIG
     // =========================
-    // Byt till din egen Web App URL:
+    // Byt till din egen Web App URL om du har uppdaterat deploy:
     const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
 
     // =========================
     // API-HJÄLPARE
     // =========================
-    async function safeJson(res) {
-      try { return await res.json(); } catch { return { success:false, error:'Ogiltigt JSON-svar' }; }
-    }
     const api = {
       async get(path, params = {}) {
         const url = new URL(API_URL);
         url.searchParams.set('path', path);
         Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
         const res = await fetch(url.toString(), { method: 'GET' });
-        return safeJson(res);
+        return res.json();
       },
       async post(path, data = {}) {
         const form = new URLSearchParams();
         form.set('path', path);
         Object.entries(data).forEach(([k, v]) => form.append(k, v));
         const res = await fetch(API_URL, { method: 'POST', body: form, redirect: 'follow' });
-        return safeJson(res);
+        return res.json();
       }
     };
 
@@ -90,6 +82,7 @@
         'Ställer laserpasset…',
         'Rullar ut tätskiktet…',
         'Kaffepaus ☕ (snart klart)…',
+        // Nya korta:
         'Skyddsglasögon på…',
         'Spikar sista listen…',
         'Bär in kakelkartonger…',
@@ -102,6 +95,8 @@
         'Tömmer skruvhinken…'
       ];
       const msgs = useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
+
+      // Fisher–Yates shuffle
       const shuffle = (arr) => {
         const a = arr.slice();
         for (let i = a.length - 1; i > 0; i--) {
@@ -110,12 +105,15 @@
         }
         return a;
       };
+
       const [order, setOrder] = useState(() => shuffle([...Array(msgs.length).keys()]));
       const [idx, setIdx] = useState(0);
+
       useEffect(() => {
         setOrder(shuffle([...Array(msgs.length).keys()]));
         setIdx(0);
       }, [msgs.length]);
+
       useEffect(() => {
         const id = setInterval(() => {
           setIdx((prev) => {
@@ -129,7 +127,9 @@
         }, interval);
         return () => clearInterval(id);
       }, [msgs.length, interval]);
+
       const phrase = msgs[order[idx]] || '';
+
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-4"></div>
@@ -156,18 +156,9 @@
     function ImageLightbox({ isOpen, images, index, onClose, onIndex }) {
       if (!isOpen || !images || images.length === 0) return null;
       const img = images[index] || images[0];
+
       const prev = (e) => { e?.stopPropagation(); onIndex((index - 1 + images.length) % images.length); };
       const next = (e) => { e?.stopPropagation(); onIndex((index + 1) % images.length); };
-
-      useEffect(() => {
-        const onKey = (e) => {
-          if (e.key === 'Escape') onClose();
-          if (e.key === 'ArrowLeft') onIndex((i)=> (i-1+images.length)%images.length);
-          if (e.key === 'ArrowRight') onIndex((i)=> (i+1)%images.length);
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-      }, [images.length, onClose, onIndex]);
 
       return (
         <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col" onClick={onClose}>
@@ -197,19 +188,56 @@
     // =========================
     // LOGIN
     // =========================
-    function LoginPage({ onLogin }) {
-      const [modeAdmin, setModeAdmin] = useState(false);
+    function AdminLogin({ onSuccess }) {
+      const [username, setUsername] = useState('admin');
+      const [password, setPassword] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
 
-      // Kund (OTP)
+      const submit = async (e) => {
+        e.preventDefault();
+        setLoading(true); setError('');
+        try {
+          if (username.trim().toLowerCase() !== 'admin') throw new Error('Användarnamnet måste vara "admin"');
+          if (!/^\d{6}$/.test(password)) throw new Error('Lösenordet måste vara 6 siffror');
+          const r = await api.post('auth/admin-login', { username, password });
+          if (!r.success) throw new Error(r.error || 'Inloggning misslyckades');
+          const me = await api.get('me', { session: r.sessionToken });
+          onSuccess({ email: r.email, sessionToken: r.sessionToken, role: me?.role || 'admin' });
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <form onSubmit={submit} className="space-y-4">
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
+            <input value={username} onChange={(e)=>setUsername(e.target.value)} className="w-full px-4 py-2 border rounded-lg" required />
+            <p className="text-xs text-gray-500 mt-1">Måste vara <span className="font-semibold">admin</span></p>
+          </div>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
+            <input type="password" inputMode="numeric" pattern="\d{6}" maxLength="6"
+              value={password} onChange={(e)=>setPassword(e.target.value)} className="w-full px-4 py-2 border rounded-lg" required />
+          </div>
+          <button type="submit" disabled={loading}
+            className="w-full bg-gray-900 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
+            {loading ? 'Loggar in…' : 'Logga in som admin'}
+          </button>
+        </form>
+      );
+    }
+
+    function CustomerLogin({ onSuccess }) {
       const [email, setEmail] = useState('');
       const [otpSent, setOtpSent] = useState(false);
       const [otp, setOtp] = useState('');
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState('');
-
-      // Admin (user+pass)
-      const [adminUser, setAdminUser] = useState('admin');
-      const [adminPass, setAdminPass] = useState('');
 
       const requestOTP = async (e) => {
         e.preventDefault();
@@ -218,9 +246,8 @@
           const res = await api.post('auth/request-otp', { email, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Kunde inte skicka kod');
           setOtpSent(true);
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
+        } catch (err) { setError(err.message); }
+        finally { setLoading(false); }
       };
 
       const verifyOTP = async (e) => {
@@ -230,93 +257,71 @@
           const res = await api.post('auth/verify-otp', { email, code: otp, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Ogiltig kod');
           const me = await api.get('me', { session: res.sessionToken });
-          onLogin({ email: res.email, sessionToken: res.sessionToken, role: (me && me.role) || 'customer' });
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
-      };
-
-      const adminLogin = async (e) => {
-        e.preventDefault();
-        setLoading(true); setError('');
-        try {
-          if (!/^\d{6}$/.test(adminPass)) throw new Error('Ange 6-siffrigt lösenord');
-          const res = await api.post('auth/admin-login', { username: adminUser, password: adminPass });
-          if (!res.success) throw new Error(res.error || 'Felaktiga admin-uppgifter');
-          onLogin({ email: res.email, sessionToken: res.sessionToken, role: 'admin' });
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
+          onSuccess({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'customer' });
+        } catch (err) { setError(err.message); }
+        finally { setLoading(false); }
       };
 
       return (
-        <div className="min-h-screen flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl shadow-2xl p-8 bg-white">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-3xl font-bold text-gray-800">🏗️ Byggflöde</h1>
-              <label className="text-sm flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={modeAdmin} onChange={(e)=>setModeAdmin(e.target.checked)} />
-                <span>{modeAdmin ? 'Växla till kundinloggning' : 'Växla till admin'}</span>
-              </label>
+        <>
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+          {!otpSent ? (
+            <form onSubmit={requestOTP} className="space-y-4">
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">E-post</label>
+                <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg" placeholder="din@email.com" required />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
+                {loading ? 'Skickar…' : 'Skicka inloggningskod'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={verifyOTP} className="space-y-4">
+              <div className="text-green-600">✓ Kod skickad till {email}</div>
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">6-siffrig kod</label>
+                <input type="text" value={otp} onChange={(e)=>setOtp(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg text-center text-2xl tracking-widest"
+                  placeholder="123456" maxLength="6" required />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
+                {loading ? 'Verifierar…' : 'Logga in'}
+              </button>
+              <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">Skicka ny kod</button>
+            </form>
+          )}
+        </>
+      );
+    }
+
+    function LoginPage({ onLogin }) {
+      const [tab, setTab] = useState('customer'); // 'admin' | 'customer'
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-sky-100 to-sky-200 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+            <div className="text-center mb-8">
+              <h1 className="text-4xl font-bold text-gray-800 mb-2">🏗️ Byggflöde</h1>
+              <p className="text-gray-600">Följ och uppdatera byggprojekt</p>
             </div>
-            <p className="text-gray-600 mb-6">
-              {modeAdmin ? 'Logga in som admin med användarnamn och 6-siffrigt lösenord.' : 'Följ ditt byggprojekt via e-post och engångskod.'}
-            </p>
 
-            {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+            <div className="grid grid-cols-2 mb-6 rounded-lg overflow-hidden border">
+              <button onClick={()=>setTab('customer')}
+                className={"py-2 font-semibold " + (tab==='customer' ? 'bg-blue-600 text-white' : 'bg-gray-50')}>
+                Kund
+              </button>
+              <button onClick={()=>setTab('admin')}
+                className={"py-2 font-semibold " + (tab==='admin' ? 'bg-gray-900 text-white' : 'bg-gray-50')}>
+                Admin
+              </button>
+            </div>
 
-            {!modeAdmin ? (
-              !otpSent ? (
-                <form onSubmit={requestOTP}>
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-semibold mb-2">E-post</label>
-                    <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="din@email.com" required/>
-                  </div>
-                  <button type="submit" disabled={loading}
-                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
-                    {loading ? 'Skickar…' : 'Skicka inloggningskod'}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={verifyOTP}>
-                  <div className="mb-4 text-center text-green-600">✓ Kod skickad till {email}</div>
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-semibold mb-2">Ange 6-siffrig kod</label>
-                    <input type="text" value={otp} onChange={(e)=>setOtp(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
-                      placeholder="123456" maxLength="6" required />
-                  </div>
-                  <button type="submit" disabled={loading}
-                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition mb-3">
-                    {loading ? 'Verifierar…' : 'Logga in'}
-                  </button>
-                  <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">
-                    Skicka ny kod
-                  </button>
-                </form>
-              )
+            {tab==='admin' ? (
+              <AdminLogin onSuccess={onLogin}/>
             ) : (
-              <form onSubmit={adminLogin}>
-                <div className="mb-4">
-                  <label className="block text-gray-700 font-semibold mb-2">Användarnamn</label>
-                  <input value={adminUser} onChange={(e)=>setAdminUser(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>
-                </div>
-                <div className="mb-6">
-                  <label className="block text-gray-700 font-semibold mb-2">Lösenord (6 siffror)</label>
-                  <input type="password" inputMode="numeric" value={adminPass} onChange={(e)=>setAdminPass(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="••••••" maxLength="6" required/>
-                </div>
-                <button type="submit" disabled={loading}
-                  className="w-full bg-gray-800 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
-                  {loading ? 'Loggar in…' : 'Logga in som admin'}
-                </button>
-              </form>
+              <CustomerLogin onSuccess={onLogin}/>
             )}
           </div>
         </div>
@@ -326,22 +331,12 @@
     // =========================
     // GEMENSAMMA UI-BLOCK
     // =========================
-    function Header({ email, role, onLogout, onOpenChangeAdmin }) {
-      const openChange = onOpenChangeAdmin || (()=>{});
+    function Header({ email, role, onLogout }) {
       return (
         <header className="bg-white shadow">
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-800">🏗️ Byggflöde</h1>
             <div className="flex items-center gap-3">
-              {role === 'admin' && (
-                <button
-                  onClick={openChange}
-                  className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-                  title="Byt admin-lösenord"
-                >
-                  Byt lösenord
-                </button>
-              )}
               <span className="text-gray-600">{email}</span>
               <span className={"px-3 py-1 rounded-full text-sm font-semibold " + (role==='admin' ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")}>
                 {role === 'admin' ? 'Admin' : 'Kund'}
@@ -350,87 +345,6 @@
             </div>
           </div>
         </header>
-      );
-    }
-
-    // === ADMIN: Byt lösenord-modal (NY) ===
-    function ChangeAdminPasswordModal({ isOpen, onClose, session }) {
-      const [currentPw, setCurrentPw] = React.useState('');
-      const [newPw, setNewPw] = React.useState('');
-      const [busy, setBusy] = React.useState(false);
-      const [err, setErr] = React.useState('');
-      const [ok, setOk] = React.useState('');
-
-      const validateSixDigits = (s) => /^\d{6}$/.test(s || '');
-
-      const submit = async (e) => {
-        e.preventDefault();
-        setErr(''); setOk('');
-        if (!validateSixDigits(currentPw)) {
-          setErr('Nuvarande lösenord måste vara 6 siffror.');
-          return;
-        }
-        if (!validateSixDigits(newPw)) {
-          setErr('Nytt lösenord måste vara 6 siffror.');
-          return;
-        }
-        try {
-          setBusy(true);
-          const res = await api.post('admin/set-password', {
-            session: session.sessionToken,
-            currentPassword: currentPw,
-            newPassword: newPw
-          });
-          if (!res.success) throw new Error(res.error || 'Kunde inte uppdatera lösenordet');
-          setOk('Lösenord uppdaterat!');
-          setCurrentPw(''); setNewPw('');
-          setTimeout(onClose, 1000);
-        } catch (e2) {
-          setErr(e2.message);
-        } finally {
-          setBusy(false);
-        }
-      };
-
-      return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Byt admin-lösenord">
-          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
-          {ok && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{ok}</div>}
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Nuvarande lösenord (6 siffror)</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={currentPw}
-                onChange={(e)=>setCurrentPw(e.target.value)}
-                maxLength={6}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="••••••"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Nytt lösenord (6 siffror)</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={newPw}
-                onChange={(e)=>setNewPw(e.target.value)}
-                maxLength={6}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="••••••"
-                required
-              />
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
-              <button type="submit" disabled={busy} className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg">
-                {busy ? 'Sparar…' : 'Spara nytt lösenord'}
-              </button>
-            </div>
-          </form>
-        </Modal>
       );
     }
 
@@ -542,7 +456,7 @@
     }
 
     // =========================
-    // MODALER (Admin)
+    // MODALER
     // =========================
     function CreateAccountModal({ isOpen, onClose, session }) {
       const [email, setEmail] = useState('');
@@ -712,6 +626,7 @@
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
         try {
+          // Parallell uppladdning
           const uploads = await Promise.all((files || []).map(async (f) => {
             const base64 = await readFileAsBase64(f);
             return api.post('file/upload', {
@@ -762,7 +677,7 @@
     // =========================
     function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
       const isCompleted = step.status === 'completed';
-      const [showCreatePost, setShowCreatePost] = useState(false);
+      const [showCreatePost, setShowCreatePost] = React.useState(false);
 
       return (
         <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
@@ -803,6 +718,7 @@
       const [lightboxOpen, setLightboxOpen] = useState(false);
       const [lightboxImages, setLightboxImages] = useState([]);
       const [lightboxIndex, setLightboxIndex] = useState(0);
+
       const openLightbox = (images, idx=0) => { setLightboxImages(images||[]); setLightboxIndex(idx||0); setLightboxOpen(true); };
 
       const load = async () => {
@@ -837,7 +753,7 @@
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                     {post.images.map((img,i)=>(
                       <img key={i}
-                        src={img.thumbnailUrl}
+                        src={img.thumbnailUrl || img.directUrl}
                         loading="lazy"
                         alt="Bild"
                         className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
@@ -951,7 +867,6 @@
       const [selectedProject, setSelectedProject] = useState(null);
       const [showCreateProject, setShowCreateProject] = useState(false);
       const [showCreateAccount, setShowCreateAccount] = useState(false);
-      const [showChangeAdmin, setShowChangeAdmin] = useState(false); // NY
 
       useEffect(()=>{
         const saved = localStorage.getItem('byggflode_session');
@@ -960,16 +875,8 @@
       },[]);
 
       useEffect(()=>{
-        if (session?.sessionToken) loadProjects();
+        if (session) loadProjects();
       }, [session?.sessionToken]);
-
-      // Autoöppna single-projekt för kund
-      useEffect(()=>{
-        const isAdmin = session?.role === 'admin';
-        if (!isAdmin && projects.length === 1 && !selectedProject) {
-          setSelectedProject(projects[0]);
-        }
-      }, [projects, session, selectedProject]);
 
       const onLogin = (sess) => {
         setSession(sess);
@@ -982,6 +889,7 @@
       };
 
       const loadProjects = async () => {
+        if (!session) return;
         setLoadingProjects(true);
         const res = await api.get('projects', { session: session.sessionToken });
         if (res.success) setProjects(res.projects || []);
@@ -990,24 +898,19 @@
 
       if (loadingApp) {
         return (
-          <div className="min-h-screen flex items-center justify-center">
-            <FunLoader />
+          <div className="min-h-screen bg-gradient-to-br from-sky-100 to-sky-200 flex items-center justify-center">
+            <div className="text-gray-700 text-2xl">Laddar…</div>
           </div>
         );
       }
 
       if (!session) return <LoginPage onLogin={onLogin} />;
 
-      // Projektsida
+      // Om projekt öppnats → visa projektsida
       if (selectedProject) {
         return (
           <>
-            <Header
-              email={session.email}
-              role={session.role}
-              onLogout={onLogout}
-              onOpenChangeAdmin={() => setShowChangeAdmin(true)}
-            />
+            <Header email={session.email} role={session.role} onLogout={onLogout}/>
             <ProjectView
               project={selectedProject}
               session={session}
@@ -1015,27 +918,22 @@
               onBack={() => { setSelectedProject(null); loadProjects(); }}
               onLogout={onLogout}
             />
-            {/* Modal: byt admin-lösenord */}
-            <ChangeAdminPasswordModal
-              isOpen={showChangeAdmin}
-              onClose={() => setShowChangeAdmin(false)}
-              session={session}
-            />
           </>
         );
       }
 
-      // Root dashboard
+      // ROOT DASHBOARD
       const isAdmin = session.role === 'admin';
+
+      // Kund: om bara ett projekt → öppna direkt feed
+      if (!isAdmin && projects.length === 1) {
+        setSelectedProject(projects[0]);
+        return null;
+      }
 
       return (
         <>
-          <Header
-            email={session.email}
-            role={session.role}
-            onLogout={onLogout}
-            onOpenChangeAdmin={() => setShowChangeAdmin(true)}
-          />
+          <Header email={session.email} role={session.role} onLogout={onLogout}/>
           <main className="max-w-7xl mx-auto px-4 py-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-3xl font-bold text-gray-800">{isAdmin ? 'Mina projekt' : 'Dina projekt'}</h2>
@@ -1065,22 +963,8 @@
           </main>
 
           {/* Modaler */}
-          <CreateProjectModal
-            isOpen={showCreateProject}
-            onClose={()=>setShowCreateProject(false)}
-            onSuccess={loadProjects}
-            session={session}
-          />
-          <CreateAccountModal
-            isOpen={showCreateAccount}
-            onClose={()=>setShowCreateAccount(false)}
-            session={session}
-          />
-          <ChangeAdminPasswordModal
-            isOpen={showChangeAdmin}
-            onClose={() => setShowChangeAdmin(false)}
-            session={session}
-          />
+          <CreateProjectModal isOpen={showCreateProject} onClose={()=>setShowCreateProject(false)} onSuccess={loadProjects} session={session}/>
+          <CreateAccountModal isOpen={showCreateAccount} onClose={()=>setShowCreateAccount(false)} session={session}/>
         </>
       );
     }
