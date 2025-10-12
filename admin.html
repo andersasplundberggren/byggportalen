@@ -14,7 +14,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* Enfärgad, svagt ljusblå bakgrund + fallback */
     html, body { height: 100%; }
     body {
       margin: 0;
@@ -327,12 +326,22 @@
     // =========================
     // GEMENSAMMA UI-BLOCK
     // =========================
-    function Header({ email, role, onLogout }) {
+    function Header({ email, role, onLogout, onOpenChangeAdmin }) {
+      const openChange = onOpenChangeAdmin || (()=>{});
       return (
         <header className="bg-white shadow">
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-800">🏗️ Byggflöde</h1>
             <div className="flex items-center gap-3">
+              {role === 'admin' && (
+                <button
+                  onClick={openChange}
+                  className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  title="Byt admin-lösenord"
+                >
+                  Byt lösenord
+                </button>
+              )}
               <span className="text-gray-600">{email}</span>
               <span className={"px-3 py-1 rounded-full text-sm font-semibold " + (role==='admin' ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")}>
                 {role === 'admin' ? 'Admin' : 'Kund'}
@@ -341,6 +350,87 @@
             </div>
           </div>
         </header>
+      );
+    }
+
+    // === ADMIN: Byt lösenord-modal (NY) ===
+    function ChangeAdminPasswordModal({ isOpen, onClose, session }) {
+      const [currentPw, setCurrentPw] = React.useState('');
+      const [newPw, setNewPw] = React.useState('');
+      const [busy, setBusy] = React.useState(false);
+      const [err, setErr] = React.useState('');
+      const [ok, setOk] = React.useState('');
+
+      const validateSixDigits = (s) => /^\d{6}$/.test(s || '');
+
+      const submit = async (e) => {
+        e.preventDefault();
+        setErr(''); setOk('');
+        if (!validateSixDigits(currentPw)) {
+          setErr('Nuvarande lösenord måste vara 6 siffror.');
+          return;
+        }
+        if (!validateSixDigits(newPw)) {
+          setErr('Nytt lösenord måste vara 6 siffror.');
+          return;
+        }
+        try {
+          setBusy(true);
+          const res = await api.post('admin/set-password', {
+            session: session.sessionToken,
+            currentPassword: currentPw,
+            newPassword: newPw
+          });
+          if (!res.success) throw new Error(res.error || 'Kunde inte uppdatera lösenordet');
+          setOk('Lösenord uppdaterat!');
+          setCurrentPw(''); setNewPw('');
+          setTimeout(onClose, 1000);
+        } catch (e2) {
+          setErr(e2.message);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Byt admin-lösenord">
+          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
+          {ok && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{ok}</div>}
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Nuvarande lösenord (6 siffror)</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={currentPw}
+                onChange={(e)=>setCurrentPw(e.target.value)}
+                maxLength={6}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="••••••"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Nytt lösenord (6 siffror)</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={newPw}
+                onChange={(e)=>setNewPw(e.target.value)}
+                maxLength={6}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="••••••"
+                required
+              />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
+              <button type="submit" disabled={busy} className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg">
+                {busy ? 'Sparar…' : 'Spara nytt lösenord'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       );
     }
 
@@ -454,9 +544,6 @@
     // =========================
     // MODALER (Admin)
     // =========================
-
-    
-    
     function CreateAccountModal({ isOpen, onClose, session }) {
       const [email, setEmail] = useState('');
       const [name, setName] = useState('');
@@ -864,6 +951,7 @@
       const [selectedProject, setSelectedProject] = useState(null);
       const [showCreateProject, setShowCreateProject] = useState(false);
       const [showCreateAccount, setShowCreateAccount] = useState(false);
+      const [showChangeAdmin, setShowChangeAdmin] = useState(false); // NY
 
       useEffect(()=>{
         const saved = localStorage.getItem('byggflode_session');
@@ -875,7 +963,7 @@
         if (session?.sessionToken) loadProjects();
       }, [session?.sessionToken]);
 
-      // Autoöppna single-projekt för kund – görs i effect för att undvika state under render
+      // Autoöppna single-projekt för kund
       useEffect(()=>{
         const isAdmin = session?.role === 'admin';
         if (!isAdmin && projects.length === 1 && !selectedProject) {
@@ -914,13 +1002,24 @@
       if (selectedProject) {
         return (
           <>
-            <Header email={session.email} role={session.role} onLogout={onLogout}/>
+            <Header
+              email={session.email}
+              role={session.role}
+              onLogout={onLogout}
+              onOpenChangeAdmin={() => setShowChangeAdmin(true)}
+            />
             <ProjectView
               project={selectedProject}
               session={session}
               userRole={session.role}
               onBack={() => { setSelectedProject(null); loadProjects(); }}
               onLogout={onLogout}
+            />
+            {/* Modal: byt admin-lösenord */}
+            <ChangeAdminPasswordModal
+              isOpen={showChangeAdmin}
+              onClose={() => setShowChangeAdmin(false)}
+              session={session}
             />
           </>
         );
@@ -931,7 +1030,12 @@
 
       return (
         <>
-          <Header email={session.email} role={session.role} onLogout={onLogout}/>
+          <Header
+            email={session.email}
+            role={session.role}
+            onLogout={onLogout}
+            onOpenChangeAdmin={() => setShowChangeAdmin(true)}
+          />
           <main className="max-w-7xl mx-auto px-4 py-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-3xl font-bold text-gray-800">{isAdmin ? 'Mina projekt' : 'Dina projekt'}</h2>
@@ -961,8 +1065,22 @@
           </main>
 
           {/* Modaler */}
-          <CreateProjectModal isOpen={showCreateProject} onClose={()=>setShowCreateProject(false)} onSuccess={loadProjects} session={session}/>
-          <CreateAccountModal isOpen={showCreateAccount} onClose={()=>setShowCreateAccount(false)} session={session}/>
+          <CreateProjectModal
+            isOpen={showCreateProject}
+            onClose={()=>setShowCreateProject(false)}
+            onSuccess={loadProjects}
+            session={session}
+          />
+          <CreateAccountModal
+            isOpen={showCreateAccount}
+            onClose={()=>setShowCreateAccount(false)}
+            session={session}
+          />
+          <ChangeAdminPasswordModal
+            isOpen={showChangeAdmin}
+            onClose={() => setShowChangeAdmin(false)}
+            session={session}
+          />
         </>
       );
     }
