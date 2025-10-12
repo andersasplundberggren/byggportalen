@@ -14,15 +14,60 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
+    /* Bas */
+    :root {
+      --bp-bg: #0e3a68;       /* blueprint blå */
+      --bp-grid: rgba(255,255,255,0.08);
+      --bp-grid-strong: rgba(255,255,255,0.12);
+      --wood-light: #e7d2b4;
+      --wood-mid: #d1b48a;
+      --wood-dark: #b08968;
+    }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
     .line-clamp-3 {
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
+
+    /* --- RITNINGSBAKGRUND (blueprint) --- */
+    .bg-blueprint {
+      /* Grundfärg */
+      background-color: var(--bp-bg);
+      /* Tunn rutnätslinje 16px */
+      background-image:
+        linear-gradient(transparent 15px, var(--bp-grid) 16px),
+        linear-gradient(90deg, transparent 15px, var(--bp-grid) 16px),
+        /* Starkare linje var 80px */
+        linear-gradient(transparent 79px, var(--bp-grid-strong) 80px),
+        linear-gradient(90deg, transparent 79px, var(--bp-grid-strong) 80px);
+      background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
+      background-attachment: fixed;
+    }
+
+    /* --- TRÄPANEL-BAKGRUND (om du vill byta) --- */
+    .bg-wood {
+      background-image:
+        repeating-linear-gradient(
+          90deg,
+          var(--wood-light) 0px,
+          var(--wood-light) 180px,
+          var(--wood-mid) 180px,
+          var(--wood-mid) 185px
+        ),
+        linear-gradient(180deg, rgba(0,0,0,0.04), rgba(255,255,255,0.05));
+      background-color: var(--wood-dark);
+      background-attachment: fixed;
+    }
+
+    /* Tunna kort får vit bakgrund för läsbarhet */
+    .page-wrap {
+      background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.9));
+      min-height: 100vh;
+    }
   </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-blueprint">
   <div id="root"></div>
 
   <script type="text/babel">
@@ -160,29 +205,89 @@
     }
 
     // =========================
-    // HELSKÄRMS-LIGHTBOX
+    // Bild-URL-normalisering
+    // =========================
+    // Väljer bästa möjliga inline-URL för Drive-bild
+    function pickBestUrl(img) {
+      if (img?.directUrl) return img.directUrl;
+
+      const extractFileId = (u) => {
+        try {
+          const m = String(u || '').match(/\/d\/([^/]+)/);
+          return m ? m[1] : null;
+        } catch { return null; }
+      };
+
+      const fileId = img?.fileId || extractFileId(img?.fullUrl);
+      if (fileId) {
+        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+
+      if (img?.thumbnailUrl) return img.thumbnailUrl;
+      if (img?.fullUrl) return img.fullUrl;
+      return '';
+    }
+
+    // =========================
+    // HELSKÄRMS-LIGHTBOX (robust)
     // =========================
     function ImageLightbox({ isOpen, images, index, onClose, onIndex }) {
       if (!isOpen || !images || images.length === 0) return null;
-      const img = images[index] || images[0];
 
-      const prev = (e) => { e?.stopPropagation(); onIndex((index - 1 + images.length) % images.length); };
-      const next = (e) => { e?.stopPropagation(); onIndex((index + 1) % images.length); };
+      const safeIndex = Math.min(Math.max(index || 0, 0), images.length - 1);
+      const img = images[safeIndex] || images[0];
+      const src = pickBestUrl(img);
+
+      const prev = (e) => { e?.stopPropagation(); onIndex((safeIndex - 1 + images.length) % images.length); };
+      const next = (e) => { e?.stopPropagation(); onIndex((safeIndex + 1) % images.length); };
+
+      // ESC/vänster/höger + lås body-scroll
+      React.useEffect(() => {
+        const onKey = (ev) => {
+          if (ev.key === 'Escape') onClose();
+          if (ev.key === 'ArrowLeft') prev();
+          if (ev.key === 'ArrowRight') next();
+        };
+        document.addEventListener('keydown', onKey);
+        const original = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+          document.removeEventListener('keydown', onKey);
+          document.body.style.overflow = original;
+        };
+      }, [onClose]);
+
+      // Fallback om src fallerar
+      const [broken, setBroken] = React.useState(false);
+      React.useEffect(() => { setBroken(false); }, [src]);
+
+      const fallbackSrc = img?.thumbnailUrl || img?.fullUrl || '';
 
       return (
-        <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col" onClick={onClose}>
+        <div className="fixed inset-0 z-[100000] bg-black/90 flex flex-col" onClick={onClose}>
           <div className="flex items-center justify-between p-4 text-white">
             <button onClick={onClose} className="text-3xl leading-none">×</button>
-            <div className="text-sm opacity-80">{index + 1}/{images.length}</div>
+            <div className="text-sm opacity-80">{safeIndex + 1}/{images.length}</div>
           </div>
           <div className="flex-1 flex items-center justify-center px-4">
-            <img
-              src={img.directUrl || img.thumbnailUrl || img.fullUrl}
-              alt=""
-              className="max-h-[85vh] max-w-[95vw] object-contain"
-              onClick={(e)=>e.stopPropagation()}
-              loading="lazy"
-            />
+            {!broken ? (
+              <img
+                src={src}
+                alt=""
+                className="max-h-[85vh] max-w-[95vw] object-contain"
+                onClick={(e)=>e.stopPropagation()}
+                onError={()=>setBroken(true)}
+                loading="lazy"
+              />
+            ) : (
+              <img
+                src={fallbackSrc}
+                alt=""
+                className="max-h-[85vh] max-w-[95vw] object-contain"
+                onClick={(e)=>e.stopPropagation()}
+                loading="lazy"
+              />
+            )}
           </div>
           {images.length > 1 && (
             <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 pointer-events-none">
@@ -230,8 +335,8 @@
       };
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="page-wrap w-full max-w-md rounded-2xl shadow-2xl p-8">
             <div className="text-center mb-8">
               <h1 className="text-4xl font-bold text-gray-800 mb-2">🏗️ Byggflöde</h1>
               <p className="text-gray-600">Följ ditt byggprojekt</p>
@@ -280,11 +385,11 @@
     // =========================
     function Header({ email, role, onLogout }) {
       return (
-        <header className="bg-white shadow">
+        <header className="page-wrap shadow">
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-800">🏗️ Byggflöde</h1>
             <div className="flex items-center gap-3">
-              <span className="text-gray-600">{email}</span>
+              <span className="text-gray-700">{email}</span>
               <span className={"px-3 py-1 rounded-full text-sm font-semibold " + (role==='admin' ? "bg-purple-100 text-purple-800" : "bg-blue-100 text-blue-800")}>
                 {role === 'admin' ? 'Admin' : 'Kund'}
               </span>
@@ -677,13 +782,13 @@
       useEffect(()=>{ load(); }, [projectId]);
 
       if (loading) return <FunLoader /> ;
-      if (feed.length===0) return <div className="text-gray-600">Inga inlägg ännu.</div>;
+      if (feed.length===0) return <div className="page-wrap max-w-5xl mx-auto px-4 py-8 rounded-lg shadow bg-white text-gray-600">Inga inlägg ännu.</div>;
 
       return (
         <>
           <div className="space-y-4">
             {feed.map(post => (
-              <div key={post.post_id} className="bg-white rounded-lg p-5 shadow">
+              <div key={post.post_id} className="page-wrap max-w-5xl mx-auto px-4 py-5 rounded-lg shadow bg-white">
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
                     {(post.author_email||'?')[0].toUpperCase()}
@@ -700,7 +805,7 @@
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                     {post.images.map((img,i)=>(
                       <img key={i}
-                        src={img.thumbnailUrl}
+                        src={img.thumbnailUrl || pickBestUrl(img)}
                         loading="lazy"
                         alt="Bild"
                         className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
@@ -745,8 +850,8 @@
       const pct = Number(project.completion_percentage || 0);
 
       return (
-        <div className="min-h-screen bg-gray-100">
-          <header className="bg-white shadow">
+        <div>
+          <header className="page-wrap shadow">
             <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <button onClick={onBack} className="text-blue-600 hover:text-blue-800 font-semibold">← Tillbaka</button>
@@ -759,7 +864,7 @@
           </header>
 
           <main className="max-w-5xl mx-auto px-4 py-6">
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <div className="page-wrap bg-white rounded-lg shadow p-6 mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-800">Projektframsteg</h2>
                 <span className="text-3xl font-bold text-blue-600">{pct}%</span>
@@ -781,7 +886,7 @@
               loadingCounts ? (
                 <FunLoader textList={['Räknar inlägg…','Packar verktygslådan…']}/>
               ) : stepsWithCounts.length===0 ? (
-                <div className="bg-white rounded-lg shadow p-8 text-center text-gray-600">Inga steg har lagts till än</div>
+                <div className="page-wrap bg-white rounded-lg shadow p-8 text-center text-gray-600">Inga steg har lagts till än</div>
               ) : (
                 <div className="space-y-3">
                   {stepsWithCounts.map((s, idx)=>(
@@ -845,8 +950,8 @@
 
       if (loadingApp) {
         return (
-          <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <div className="text-white text-2xl">Laddar…</div>
+          <div className="min-h-screen flex items-center justify-center">
+            <FunLoader />
           </div>
         );
       }
@@ -882,14 +987,16 @@
         <>
           <Header email={session.email} role={session.role} onLogout={onLogout}/>
           <main className="max-w-7xl mx-auto px-4 py-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-gray-800">{isAdmin ? 'Mina projekt' : 'Dina projekt'}</h2>
-              {isAdmin && (
-                <div className="flex gap-2">
-                  <button onClick={()=>setShowCreateAccount(true)} className="bg-gray-800 text-white px-4 py-2 rounded-lg">+ Skapa konto</button>
-                  <button onClick={()=>setShowCreateProject(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg">+ Skapa projekt</button>
-                </div>
-              )}
+            <div className="page-wrap rounded-xl p-4 mb-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-3xl font-bold text-gray-800">{isAdmin ? 'Mina projekt' : 'Dina projekt'}</h2>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <button onClick={()=>setShowCreateAccount(true)} className="bg-gray-800 text-white px-4 py-2 rounded-lg">+ Skapa konto</button>
+                    <button onClick={()=>setShowCreateProject(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg">+ Skapa projekt</button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {loadingProjects ? (
@@ -897,8 +1004,8 @@
                 {Array.from({length:6}).map((_,i)=><ProjectSkeleton key={i}/>)}
               </div>
             ) : projects.length === 0 ? (
-              <div className="bg-white rounded-lg shadow p-8 text-center">
-                <p className="text-gray-600">{isAdmin ? 'Du har inga projekt än.' : 'Du är inte inbjuden till något projekt ännu.'}</p>
+              <div className="page-wrap bg-white rounded-lg shadow p-8 text-center">
+                <p className="text-gray-700">{isAdmin ? 'Du har inga projekt än.' : 'Du är inte inbjuden till något projekt ännu.'}</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
