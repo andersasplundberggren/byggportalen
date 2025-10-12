@@ -17,6 +17,9 @@
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
+    .line-clamp-3 {
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -449,19 +452,23 @@
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
         try {
-          const fileIds = [];
-          for (const f of files) {
+          // Parallell uppladdning
+          const uploads = await Promise.all((files || []).map(async (f) => {
             const base64 = await readFileAsBase64(f);
-            const up = await api.post('file/upload', {
+            return api.post('file/upload', {
               session: session.sessionToken, projectId, filename: f.name, mimeType: f.type, dataBase64: base64
             });
+          }));
+          const fileIds = uploads.map(up => {
             if (!up.success) throw new Error(up.error || 'Uppladdning misslyckades');
-            fileIds.push(up.fileId);
-          }
+            return up.fileId;
+          });
+
           const result = await api.post('post/create', {
             session: session.sessionToken, projectId, stepId: step.step_id, text, imageFileIds: fileIds.join(',')
           });
           if (!result.success) throw new Error(result.error || 'Kunde inte skapa inlägg');
+
           setText(''); setFiles([]); onSuccess && onSuccess(); onClose();
         } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
@@ -494,97 +501,37 @@
     // =========================
     // PROJEKTVYER
     // =========================
-    function StepCard({ step, index, projectId, session, userRole, onUpdate }) {
-      const [expanded, setExpanded] = useState(false);
-      const [posts, setPosts] = useState([]);
-      const [loadingPosts, setLoadingPosts] = useState(false);
-      const [showCreatePost, setShowCreatePost] = useState(false);
-      const [completing, setCompleting] = useState(false);
+    function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
       const isCompleted = step.status === 'completed';
-
-      const loadPosts = async () => {
-        setLoadingPosts(true);
-        const res = await api.get('step/posts', { stepId: step.step_id, session: session.sessionToken, path:'step/posts' });
-        if (res.success) setPosts(res.posts || []);
-        setLoadingPosts(false);
-      };
-      const handleExpand = () => { if (!expanded) loadPosts(); setExpanded(!expanded); };
-
-      const handleComplete = async () => {
-        if (!confirm(`Markera "${step.step_name}" som klart?`)) return;
-        setCompleting(true);
-        const res = await api.post('step/complete', { session: session.sessionToken, stepId: step.step_id });
-        if (!res.success) alert(res.error || 'Kunde inte markera klart');
-        onUpdate && onUpdate(); setCompleting(false);
-      };
-
-      const refreshAfterPost = () => { setPosts([]); loadPosts(); };
+      const [showCreatePost, setShowCreatePost] = React.useState(false);
 
       return (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="p-6">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl ${isCompleted ? 'bg-green-500 text-white':'bg-gray-200 text-gray-700'}`}>
-                {isCompleted ? '✓' : (index + 1)}
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-800">{step.step_name}</h3>
-                <p className="text-sm text-gray-500">
-                  {isCompleted ? `Klart ${step.completed_at ? new Date(step.completed_at).toLocaleDateString('sv-SE') : ''}` : 'Pågående'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {userRole==='admin' && !isCompleted && (
-                  <button onClick={handleComplete} disabled={completing}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg">{completing?'…':'✓ Markera klar'}</button>
-                )}
-                {userRole==='admin' && (
-                  <button onClick={()=>setShowCreatePost(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg">+ Lägg till</button>
-                )}
-                <button onClick={handleExpand} className="text-gray-400 hover:text-gray-600 text-xl">{expanded ? '▼':'▶'}</button>
-              </div>
+        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${isCompleted ? 'bg-green-500 text-white':'bg-gray-200 text-gray-700'}`}>
+            {isCompleted ? '✓' : index + 1}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h3 className="font-bold text-gray-800">{step.step_name}</h3>
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Inlägg: {step.post_count}</span>
+              <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">Bilder: {step.image_count}</span>
+              {isCompleted && <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Klar</span>}
+            </div>
+            <div className="text-xs text-gray-500">
+              {isCompleted ? `Klart ${step.completed_at ? new Date(step.completed_at).toLocaleDateString('sv-SE') : ''}` : 'Pågående'}
             </div>
           </div>
-          {expanded && (
-            <div className="border-t bg-gray-50 p-6">
-              {loadingPosts ? (
-                <div className="text-center text-gray-600">Laddar inlägg…</div>
-              ) : posts.length===0 ? (
-                <div className="text-center text-gray-600">{userRole==='admin' ? 'Inga uppdateringar än. Klicka "+ Lägg till".' : 'Inga uppdateringar för detta steg än.'}</div>
-              ) : (
-                <div className="space-y-4">
-                  {posts.map(post=>(
-                    <div key={post.post_id} className="bg-white rounded-lg p-4 shadow-sm">
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                          {(post.author_email||'?')[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-800">{post.author_email}</div>
-                          <div className="text-sm text-gray-500">{new Date(post.created_at).toLocaleDateString('sv-SE')}</div>
-                        </div>
-                      </div>
-                      <p className="text-gray-800 whitespace-pre-wrap">{post.text}</p>
-                      {post.images && post.images.length>0 && (
-                        <div className="grid grid-cols-2 gap-2 mt-3">
-                          {post.images.map((img,i)=>(
-                            <img key={i} src={img.thumbnailUrl} alt="Bild"
-                              className="rounded-lg w-full h-40 object-cover cursor-pointer hover:opacity-90"
-                              onClick={()=>window.open(img.fullUrl,'_blank')}/>
-                          ))}
-                        </div>
-                      )}
-                      <div className="mt-3 flex items-center gap-3">
-                        <ReactionBar post={post} session={session}/>
-                      </div>
-                      <Comments postId={post.post_id} session={session}/>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {userRole==='admin' && (
+            <button onClick={()=>setShowCreatePost(true)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">+ Inlägg</button>
           )}
-          <CreatePostModal isOpen={showCreatePost} onClose={()=>setShowCreatePost(false)} step={step} projectId={projectId} session={session} onSuccess={refreshAfterPost}/>
+          <CreatePostModal
+            isOpen={showCreatePost}
+            onClose={()=>setShowCreatePost(false)}
+            step={step}
+            projectId={projectId}
+            session={session}
+            onSuccess={() => { onPost && onPost(); }}
+          />
         </div>
       );
     }
@@ -623,7 +570,7 @@
               {post.images && post.images.length>0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                   {post.images.map((img,i)=>(
-                    <img key={i} src={img.thumbnailUrl} alt="Bild"
+                    <img key={i} src={img.thumbnailUrl} loading="lazy" alt="Bild"
                       className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
                       onClick={()=>window.open(img.fullUrl,'_blank')}/>
                   ))}
@@ -641,18 +588,17 @@
     }
 
     function ProjectView({ project, session, userRole, onBack, onLogout }) {
-      const [steps, setSteps] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [showInvite, setShowInvite] = useState(false);
+      const [stepsWithCounts, setStepsWithCounts] = useState([]);
+      const [loadingCounts, setLoadingCounts] = useState(true);
       const [tab, setTab] = useState('feed'); // 'feed' | 'steps'
 
-      const loadSteps = async () => {
-        setLoading(true);
-        const res = await api.get('project/steps', { projectId: project.project_id, session: session.sessionToken });
-        if (res.success) setSteps(res.steps || []);
-        setLoading(false);
+      const loadStepsWithCounts = async () => {
+        setLoadingCounts(true);
+        const res = await api.get('project/steps-with-counts', { projectId: project.project_id, session: session.sessionToken });
+        if (res.success) setStepsWithCounts(res.steps || []);
+        setLoadingCounts(false);
       };
-      useEffect(()=>{ loadSteps(); }, [project.project_id]);
+      useEffect(()=>{ loadStepsWithCounts(); }, [project.project_id]);
 
       const pct = Number(project.completion_percentage || 0);
 
@@ -666,7 +612,7 @@
               </div>
               <div className="flex items-center gap-2">
                 {userRole==='admin' && (
-                  <button onClick={()=>setShowInvite(true)} className="bg-green-600 text-white px-4 py-2 rounded-lg">👥 Bjud in kund</button>
+                  <button onClick={()=>setShowInvite(true)} className="hidden"></button>
                 )}
                 <button onClick={onLogout} className="text-red-600 hover:text-red-800">Logga ut</button>
               </div>
@@ -693,23 +639,27 @@
             {tab==='feed' ? (
               <ProjectFeed projectId={project.project_id} session={session}/>
             ) : (
-              <>
-                {loading ? (
-                  <div className="text-center text-gray-600">Laddar steg…</div>
-                ) : steps.length===0 ? (
-                  <div className="bg-white rounded-lg shadow p-8 text-center text-gray-600">Inga steg har lagts till än</div>
-                ) : (
-                  <div className="space-y-4">
-                    {steps.map((s, idx)=>(
-                      <StepCard key={s.step_id} step={s} index={idx} projectId={project.project_id} session={session} userRole={userRole} onUpdate={loadSteps}/>
-                    ))}
-                  </div>
-                )}
-              </>
+              loadingCounts ? (
+                <div className="text-center text-gray-600">Laddar steg…</div>
+              ) : stepsWithCounts.length===0 ? (
+                <div className="bg-white rounded-lg shadow p-8 text-center text-gray-600">Inga steg har lagts till än</div>
+              ) : (
+                <div className="space-y-3">
+                  {stepsWithCounts.map((s, idx)=>(
+                    <StepCompactCard
+                      key={s.step_id}
+                      step={s}
+                      index={idx}
+                      projectId={project.project_id}
+                      session={session}
+                      userRole={userRole}
+                      onPost={()=>{ loadStepsWithCounts(); }}
+                    />
+                  ))}
+                </div>
+              )
             )}
           </main>
-
-          <InviteMemberModal isOpen={showInvite} onClose={()=>setShowInvite(false)} project={project} session={session}/>
         </div>
       );
     }
@@ -724,6 +674,7 @@
       const [selectedProject, setSelectedProject] = useState(null);
       const [showCreateProject, setShowCreateProject] = useState(false);
       const [showCreateAccount, setShowCreateAccount] = useState(false);
+      const [showInvite, setShowInvite] = useState(false);
 
       useEffect(()=>{
         const saved = localStorage.getItem('byggflode_session');
@@ -773,6 +724,13 @@
               onBack={() => { setSelectedProject(null); loadProjects(); }}
               onLogout={onLogout}
             />
+            {/* Invite modal top-level för tillgång till project */}
+            <InviteMemberModal
+              isOpen={showInvite}
+              onClose={()=>setShowInvite(false)}
+              project={selectedProject}
+              session={session}
+            />
           </>
         );
       }
@@ -805,7 +763,7 @@
                 <p className="text-gray-600">{isAdmin ? 'Du har inga projekt än.' : 'Du är inte inbjuden till något projekt ännu.'}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map(p => (
                   <ProjectCard key={p.project_id} project={p} onClick={()=>setSelectedProject(p)}/>
                 ))}
