@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Byggflöde API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .test-section h2 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .response {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .success {
+            color: #00ff00;
+        }
+        
+        .error {
+            color: #ff4444;
+        }
+        
+        .session-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .session-info strong {
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏗️ Byggflöde API Tester</h1>
+        <p class="subtitle">Testa ditt Apps Script API</p>
+        
+        <div class="session-info" id="sessionInfo" style="display: none;">
+            <strong>Session aktiv!</strong><br>
+            Email: <span id="sessionEmail"></span><br>
+            Token: <span id="sessionToken" style="font-family: monospace; font-size: 12px;"></span>
+        </div>
+        
+        <!-- Test 1: Ping -->
+        <div class="test-section">
+            <h2>1. Test Ping (Kontrollera API)</h2>
+            <button onclick="testPing()">🏓 Test Ping</button>
+            <div id="pingResponse" class="response" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 2: Request OTP -->
+        <div class="test-section">
+            <h2>2. Begär OTP-kod</h2>
+            <div class="input-group">
+                <label>Email:</label>
+                <input type="email" id="otpEmail" value="andersberggren78@hotmail.com">
+            </div>
+            <button onclick="requestOTP()">📧 Skicka OTP</button>
+            <div id="otpResponse" class="response" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 3: Verify OTP -->
+        <div class="test-section">
+            <h2>3. Verifiera OTP-kod</h2>
+            <div class="input-group">
+                <label>Email:</label>
+                <input type="email" id="verifyEmail" value="andersberggren78@hotmail.com">
+            </div>
+            <div class="input-group">
+                <label>OTP-kod (från email):</label>
+                <input type="text" id="otpCode" placeholder="123456">
+            </div>
+            <button onclick="verifyOTP()">✅ Verifiera OTP</button>
+            <div id="verifyResponse" class="response" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 4: Get Projects -->
+        <div class="test-section">
+            <h2>4. Hämta Projekt (kräver session)</h2>
+            <button onclick="getProjects()">📋 Hämta Projekt</button>
+            <div id="projectsResponse" class="response" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 5: Create Project -->
+        <div class="test-section">
+            <h2>5. Skapa Projekt (kräver session)</h2>
+            <div class="input-group">
+                <label>Projektnamn:</label>
+                <input type="text" id="projectName" placeholder="Villa Andersson">
+            </div>
+            <div class="input-group">
+                <label>Beskrivning:</label>
+                <textarea id="projectDesc" placeholder="Renovering av kök och badrum"></textarea>
+            </div>
+            <button onclick="createProject()">➕ Skapa Projekt</button>
+            <div id="createResponse" class="response" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
+        let sessionToken = '';
+        let userEmail = '';
+        
+        function showResponse(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = 'response ' + (isError ? 'error' : 'success');
+            element.textContent = JSON.stringify(data, null, 2);
+        }
+        
+        function updateSessionInfo(email, token) {
+            sessionToken = token;
+            userEmail = email;
+            document.getElementById('sessionInfo').style.display = 'block';
+            document.getElementById('sessionEmail').textContent = email;
+            document.getElementById('sessionToken').textContent = token;
+        }
+        
+        async function testPing() {
+            try {
+                const response = await fetch(API_URL + '?path=ping');
+                const data = await response.json();
+                showResponse('pingResponse', data);
+            } catch (error) {
+                showResponse('pingResponse', {error: error.message}, true);
+            }
+        }
+        
+        async function requestOTP() {
+            const email = document.getElementById('otpEmail').value;
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        path: 'auth/request-otp',
+                        email: email,
+                        projectId: ''
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse('otpResponse', data);
+                
+                if (data.success) {
+                    alert('✅ OTP skickad! Kolla din email och fyll i koden nedan.');
+                }
+            } catch (error) {
+                showResponse('otpResponse', {error: error.message}, true);
+            }
+        }
+        
+        async function verifyOTP() {
+            const email = document.getElementById('verifyEmail').value;
+            const code = document.getElementById('otpCode').value;
+            
+            if (!code) {
+                alert('⚠️ Fyll i OTP-koden från din email!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        path: 'auth/verify-otp',
+                        email: email,
+                        code: code,
+                        projectId: ''
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse('verifyResponse', data);
+                
+                if (data.success && data.sessionToken) {
+                    updateSessionInfo(data.email, data.sessionToken);
+                    alert('✅ Inloggad! Du kan nu testa de andra funktionerna.');
+                }
+            } catch (error) {
+                showResponse('verifyResponse', {error: error.message}, true);
+            }
+        }
+        
+        async function getProjects() {
+            if (!sessionToken) {
+                alert('⚠️ Du måste logga in först! Begär OTP och verifiera.');
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_URL + '?path=projects&session=' + sessionToken);
+                const data = await response.json();
+                showResponse('projectsResponse', data);
+            } catch (error) {
+                showResponse('projectsResponse', {error: error.message}, true);
+            }
+        }
+        
+        async function createProject() {
+            if (!sessionToken) {
+                alert('⚠️ Du måste logga in först! Begär OTP och verifiera.');
+                return;
+            }
+            
+            const name = document.getElementById('projectName').value;
+            const description = document.getElementById('projectDesc').value;
+            
+            if (!name) {
+                alert('⚠️ Fyll i projektnamn!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        path: 'project/create',
+                        session: sessionToken,
+                        name: name,
+                        description: description
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse('createResponse', data);
+                
+                if (data.success) {
+                    alert('✅ Projekt skapat! Folder URL: ' + data.folderUrl);
+                }
+            } catch (error) {
+                showResponse('createResponse', {error: error.message}, true);
+            }
+        }
+    </script>
+</body>
+</html>
