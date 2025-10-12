@@ -231,14 +231,15 @@
             const email = document.getElementById('otpEmail').value;
             
             try {
+                const formData = new URLSearchParams();
+                formData.append('path', 'auth/request-otp');
+                formData.append('email', email);
+                formData.append('projectId', '');
+                
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        path: 'auth/request-otp',
-                        email: email,
-                        projectId: ''
-                    })
+                    body: formData,
+                    redirect: 'follow'
                 });
                 
                 const data = await response.json();
@@ -262,15 +263,16 @@
             }
             
             try {
+                const formData = new URLSearchParams();
+                formData.append('path', 'auth/verify-otp');
+                formData.append('email', email);
+                formData.append('code', code);
+                formData.append('projectId', '');
+                
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        path: 'auth/verify-otp',
-                        email: email,
-                        code: code,
-                        projectId: ''
-                    })
+                    body: formData,
+                    redirect: 'follow'
                 });
                 
                 const data = await response.json();
@@ -315,15 +317,16 @@
             }
             
             try {
+                const formData = new URLSearchParams();
+                formData.append('path', 'project/create');
+                formData.append('session', sessionToken);
+                formData.append('name', name);
+                formData.append('description', description);
+                
                 const response = await fetch(API_URL, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        path: 'project/create',
-                        session: sessionToken,
-                        name: name,
-                        description: description
-                    })
+                    body: formData,
+                    redirect: 'follow'
                 });
                 
                 const data = await response.json();
