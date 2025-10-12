@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Byggflöde - Admin & Kund</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .progress-bar { transition: width 0.5s ease; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
+        
+        const api = {
+            async get(path, params = {}) {
+                const url = new URL(API_URL);
+                Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+                const response = await fetch(url);
+                return response.json();
+            },
+            
+            async post(path, data = {}) {
+                const formData = new URLSearchParams();
+                formData.append('path', path);
+                Object.keys(data).forEach(key => formData.append(key, data[key]));
+                
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData,
+                    redirect: 'follow'
+                });
+                return response.json();
+            }
+        };
+        
+        // Main App
+        function App() {
+            const [session, setSession] = useState(null);
+            const [loading, setLoading] = useState(true);
+            
+            useEffect(() => {
+                const savedSession = localStorage.getItem('byggflode_session');
+                if (savedSession) {
+                    setSession(JSON.parse(savedSession));
+                }
+                setLoading(false);
+            }, []);
+            
+            const login = (sessionData) => {
+                setSession(sessionData);
+                localStorage.setItem('byggflode_session', JSON.stringify(sessionData));
+            };
+            
+            const logout = () => {
+                setSession(null);
+                localStorage.removeItem('byggflode_session');
+            };
+            
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <div className="text-white text-2xl">Laddar...</div>
+                    </div>
+                );
+            }
+            
+            if (!session) {
+                return <LoginPage onLogin={login} />;
+            }
+            
+            return <MainApp session={session} onLogout={logout} />;
+        }
+        
+        // Login Page
+        function LoginPage({ onLogin }) {
+            const [email, setEmail] = useState('');
+            const [otpSent, setOtpSent] = useState(false);
+            const [otp, setOtp] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            
+            const requestOTP = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                try {
+                    const result = await api.post('auth/request-otp', { email, projectId: '' });
+                    
+                    if (result.success) {
+                        setOtpSent(true);
+                    } else {
+                        setError(result.error || 'Kunde inte skicka kod');
+                    }
+                } catch (err) {
+                    setError('Något gick fel. Försök igen.');
+                }
+                
+                setLoading(false);
+            };
+            
+            const verifyOTP = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                try {
+                    const result = await api.post('auth/verify-otp', { 
+                        email, 
+                        code: otp, 
+                        projectId: '' 
+                    });
+                    
+                    if (result.success) {
+                        onLogin({
+                            email: result.email,
+                            sessionToken: result.sessionToken
+                        });
+                    } else {
+                        setError(result.error || 'Ogiltig kod');
+                    }
+                } catch (err) {
+                    setError('Något gick fel. Försök igen.');
+                }
+                
+                setLoading(false);
+            };
+            
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-bold text-gray-800 mb-2">🏗️ Byggflöde</h1>
+                            <p className="text-gray-600">Följ ditt byggprojekt</p>
+                        </div>
+                        
+                        {error && (
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                {error}
+                            </div>
+                        )}
+                        
+                        {!otpSent ? (
+                            <form onSubmit={requestOTP}>
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-semibold mb-2">
+                                        Email
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="din@email.com"
+                                        required
+                                    />
+                                </div>
+                                
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition"
+                                >
+                                    {loading ? 'Skickar...' : 'Skicka inloggningskod'}
+                                </button>
+                            </form>
+                        ) : (
+                            <form onSubmit={verifyOTP}>
+                                <div className="mb-4 text-center text-green-600">
+                                    ✓ Kod skickad till {email}
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-semibold mb-2">
+                                        Ange 6-siffrig kod
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value)}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
+                                        placeholder="123456"
+                                        maxLength="6"
+                                        required
+                                    />
+                                </div>
+                                
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition mb-3"
+                                >
+                                    {loading ? 'Verifierar...' : 'Logga in'}
+                                </button>
+                                
+                                <button
+                                    type="button"
+                                    onClick={() => setOtpSent(false)}
+                                    className="w-full text-gray-600 hover:text-gray-800"
+                                >
+                                    Skicka ny kod
+                                </button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        
+        // Main App (after login)
+        function MainApp({ session, onLogout }) {
+            const [projects, setProjects] = useState([]);
+            const [selectedProject, setSelectedProject] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [userRole, setUserRole] = useState('customer');
+            
+            useEffect(() => {
+                loadProjects();
+            }, []);
+            
+            const loadProjects = async () => {
+                setLoading(true);
+                try {
+                    const result = await api.get('projects', { 
+                        path: 'projects',
+                        session: session.sessionToken 
+                    });
+                    
+                    if (result.success) {
+                        setProjects(result.projects);
+                        if (result.projects.length > 0) {
+                            setUserRole(result.projects[0].userRole);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error loading projects:', err);
+                }
+                setLoading(false);
+            };
+            
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="text-gray-600 text-xl">Laddar projekt...</div>
+                    </div>
+                );
+            }
+            
+            if (selectedProject) {
+                return (
+                    <ProjectView 
+                        project={selectedProject}
+                        session={session}
+                        userRole={userRole}
+                        onBack={() => setSelectedProject(null)}
+                        onLogout={onLogout}
+                    />
+                );
+            }
+            
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <header className="bg-white shadow">
+                        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                            <h1 className="text-2xl font-bold text-gray-800">🏗️ Byggflöde</h1>
+                            <div className="flex items-center gap-4">
+                                <span className="text-gray-600">{session.email}</span>
+                                {userRole === 'admin' && (
+                                    <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-semibold">
+                                        Admin
+                                    </span>
+                                )}
+                                <button
+                                    onClick={onLogout}
+                                    className="text-red-600 hover:text-red-800"
+                                >
+                                    Logga ut
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+                    
+                    <main className="max-w-7xl mx-auto px-4 py-8">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-3xl font-bold text-gray-800">Mina projekt</h2>
+                            {userRole === 'admin' && (
+                                <button
+                                    onClick={() => alert('Skapa projekt-dialog kommer här!')}
+                                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
+                                >
+                                    + Skapa projekt
+                                </button>
+                            )}
+                        </div>
+                        
+                        {projects.length === 0 ? (
+                            <div className="bg-white rounded-lg shadow p-8 text-center">
+                                <p className="text-gray-600 mb-4">Du har inga projekt än</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {projects.map(project => (
+                                    <ProjectCard
+                                        key={project.project_id}
+                                        project={project}
+                                        onClick={() => setSelectedProject(project)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+        
+        // Project Card
+        function ProjectCard({ project, onClick }) {
+            const percentage = project.completion_percentage || 0;
+            
+            return (
+                <div
+                    onClick={onClick}
+                    className="bg-white rounded-lg shadow hover:shadow-xl transition cursor-pointer p-6"
+                >
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">
+                        {project.name}
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                        {project.description}
+                    </p>
+                    
+                    <div className="mb-3">
+                        <div className="flex justify-between text-sm text-gray-600 mb-1">
+                            <span>Framsteg</span>
+                            <span className="font-semibold">{percentage}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full progress-bar"
+                                style={{ width: `${percentage}%` }}
+                            />
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500">
+                            {project.userRole === 'admin' ? '👑 Admin' : '👤 Medlem'}
+                        </span>
+                        <span className="text-blue-600 font-semibold">Visa →</span>
+                    </div>
+                </div>
+            );
+        }
+        
+        // Project View
+        function ProjectView({ project, session, userRole, onBack, onLogout }) {
+            const [steps, setSteps] = useState([]);
+            const [selectedStep, setSelectedStep] = useState(null);
+            const [loading, setLoading] = useState(true);
+            
+            useEffect(() => {
+                loadSteps();
+            }, []);
+            
+            const loadSteps = async () => {
+                setLoading(true);
+                try {
+                    const result = await api.get('project/steps', {
+                        path: 'project/steps',
+                        projectId: project.project_id,
+                        session: session.sessionToken
+                    });
+                    
+                    if (result.success) {
+                        setSteps(result.steps);
+                    }
+                } catch (err) {
+                    console.error('Error loading steps:', err);
+                }
+                setLoading(false);
+            };
+            
+            const percentage = project.completion_percentage || 0;
+            
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <header className="bg-white shadow">
+                        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={onBack}
+                                    className="text-blue-600 hover:text-blue-800 font-semibold"
+                                >
+                                    ← Tillbaka
+                                </button>
+                                <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
+                            </div>
+                            <button
+                                onClick={onLogout}
+                                className="text-red-600 hover:text-red-800"
+                            >
+                                Logga ut
+                            </button>
+                        </div>
+                    </header>
+                    
+                    <main className="max-w-4xl mx-auto px-4 py-8">
+                        {/* Progress Bar */}
+                        <div className="bg-white rounded-lg shadow p-6 mb-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold text-gray-800">Projektframsteg</h2>
+                                <span className="text-3xl font-bold text-blue-600">{percentage}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-4">
+                                <div
+                                    className="bg-gradient-to-r from-blue-500 to-purple-600 h-4 rounded-full progress-bar"
+                                    style={{ width: `${percentage}%` }}
+                                />
+                            </div>
+                            <p className="text-gray-600 mt-2">{project.description}</p>
+                        </div>
+                        
+                        {/* Steps Timeline */}
+                        {loading ? (
+                            <div className="text-center py-8 text-gray-600">Laddar steg...</div>
+                        ) : steps.length === 0 ? (
+                            <div className="bg-white rounded-lg shadow p-8 text-center">
+                                <p className="text-gray-600">Inga steg har lagts till än</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {steps.map((step, index) => (
+                                    <StepCard
+                                        key={step.step_id}
+                                        step={step}
+                                        index={index}
+                                        session={session}
+                                        userRole={userRole}
+                                        onUpdate={loadSteps}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+        
+        // Step Card
+        function StepCard({ step, index, session, userRole, onUpdate }) {
+            const [expanded, setExpanded] = useState(false);
+            const [posts, setPosts] = useState([]);
+            const [loadingPosts, setLoadingPosts] = useState(false);
+            
+            const isCompleted = step.status === 'completed';
+            
+            const loadPosts = async () => {
+                if (posts.length > 0) return; // Already loaded
+                
+                setLoadingPosts(true);
+                try {
+                    const result = await api.get('step/posts', {
+                        path: 'step/posts',
+                        stepId: step.step_id,
+                        session: session.sessionToken
+                    });
+                    
+                    if (result.success) {
+                        setPosts(result.posts);
+                    }
+                } catch (err) {
+                    console.error('Error loading posts:', err);
+                }
+                setLoadingPosts(false);
+            };
+            
+            const handleExpand = () => {
+                if (!expanded) {
+                    loadPosts();
+                }
+                setExpanded(!expanded);
+            };
+            
+            return (
+                <div className="bg-white rounded-lg shadow overflow-hidden">
+                    <div
+                        onClick={handleExpand}
+                        className="p-6 cursor-pointer hover:bg-gray-50 transition"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl ${
+                                isCompleted ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'
+                            }`}>
+                                {isCompleted ? '✓' : index + 1}
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-bold text-gray-800">{step.step_name}</h3>
+                                <p className="text-sm text-gray-500">
+                                    {isCompleted ? `Klart ${new Date(step.completed_at).toLocaleDateString('sv-SE')}` : 'Pågående'}
+                                </p>
+                            </div>
+                            <div className="text-gray-400">
+                                {expanded ? '▼' : '▶'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {expanded && (
+                        <div className="border-t bg-gray-50 p-6">
+                            {loadingPosts ? (
+                                <div className="text-center text-gray-600">Laddar inlägg...</div>
+                            ) : posts.length === 0 ? (
+                                <div className="text-center text-gray-600">
+                                    Inga uppdateringar för detta steg än
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {posts.map(post => (
+                                        <div key={post.post_id} className="bg-white rounded-lg p-4 shadow-sm">
+                                            <div className="flex items-start gap-3 mb-3">
+                                                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                                    {post.author_email[0].toUpperCase()}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold text-gray-800">{post.author_email}</div>
+                                                    <div className="text-sm text-gray-500">
+                                                        {new Date(post.created_at).toLocaleDateString('sv-SE')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p className="text-gray-800 whitespace-pre-wrap">{post.text}</p>
+                                            {post.images && post.images.length > 0 && (
+                                                <div className="grid grid-cols-2 gap-2 mt-3">
+                                                    {post.images.map((img, i) => (
+                                                        <img
+                                                            key={i}
+                                                            src={img.thumbnailUrl}
+                                                            alt="Bild"
+                                                            className="rounded-lg w-full h-32 object-cover cursor-pointer hover:opacity-90 transition"
+                                                            onClick={() => window.open(img.fullUrl, '_blank')}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        // Render
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
