@@ -75,14 +75,75 @@
     // =========================
     // FUN LOADER & SKELETONS
     // =========================
-    function FunLoader({ textList }) {
-      const msgs = textList && textList.length ? textList : [
-        'Blandar bruket…',
-        'Mäter två gånger, sågar en…',
-        'Ställer laserpasset…',
-        'Rullar ut tätskiktet…',
-        'Kaffepaus ☕ (snart klart)…'
-      ];
+    function FunLoader({ textList, interval = 1400 }) {
+  const fallback = [
+    'Blandar bruket…',
+    'Mäter två gånger, sågar en…',
+    'Ställer laserpasset…',
+    'Rullar ut tätskiktet…',
+    'Kaffepaus ☕ (snart klart)…',
+    // Nya korta på samma tema:
+    'Skyddsglasögon på…',
+    'Spikar sista listen…',
+    'Bär in kakelkartonger…',
+    'Sopar rent inför nästa steg…',
+    'Plockar fram momentnyckeln…',
+    'Sätter fogkryss…',
+    'Drar kablar i kanaler…',
+    'Kontrollerar våg på golvet…',
+    'Täcker över med dammskydd…',
+    'Tömmer skruvhinken…'
+  ];
+
+  const msgs = React.useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
+
+  // Fisher–Yates shuffle
+  const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  // Start med slumpad ordning
+  const [order, setOrder] = React.useState(() => shuffle([...Array(msgs.length).keys()]));
+  const [idx, setIdx] = React.useState(() => 0);
+
+  // Om listan ändras → blanda om och börja om
+  React.useEffect(() => {
+    setOrder(shuffle([...Array(msgs.length).keys()]));
+    setIdx(0);
+  }, [msgs.length]);
+
+  // Cykla igenom blandad ordning, blanda om när vi når slutet
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      setIdx((prev) => {
+        const next = prev + 1;
+        if (next >= msgs.length) {
+          // börja en ny slumpomgång
+          setOrder(shuffle([...Array(msgs.length).keys()]));
+          return 0;
+        }
+        return next;
+      });
+    }, interval);
+    return () => clearInterval(id);
+  }, [msgs.length, interval]);
+
+  const phrase = msgs[order[idx]] || '';
+
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+      <div className="text-gray-700 font-semibold">{phrase}</div>
+      <div className="text-gray-400 text-sm mt-1">Det kan ta någon sekund…</div>
+    </div>
+  );
+}
+
       const [i, setI] = React.useState(0);
       React.useEffect(() => {
         const id = setInterval(() => setI((x)=> (x+1)%msgs.length), 1400);
