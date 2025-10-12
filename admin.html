@@ -11,6 +11,7 @@
     <style>
         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .progress-bar { transition: width 0.5s ease; }
+        .modal-overlay { backdrop-filter: blur(4px); }
     </style>
 </head>
 <body>
@@ -42,6 +43,30 @@
                 return response.json();
             }
         };
+        
+        // Modal Component
+        function Modal({ isOpen, onClose, title, children }) {
+            if (!isOpen) return null;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                            <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+                            <button
+                                onClick={onClose}
+                                className="text-gray-400 hover:text-gray-600 text-3xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
         
         // Main App
         function App() {
@@ -81,7 +106,7 @@
             return <MainApp session={session} onLogout={logout} />;
         }
         
-        // Login Page
+        // Login Page (samma som förut)
         function LoginPage({ onLogin }) {
             const [email, setEmail] = useState('');
             const [otpSent, setOtpSent] = useState(false);
@@ -153,9 +178,7 @@
                         {!otpSent ? (
                             <form onSubmit={requestOTP}>
                                 <div className="mb-6">
-                                    <label className="block text-gray-700 font-semibold mb-2">
-                                        Email
-                                    </label>
+                                    <label className="block text-gray-700 font-semibold mb-2">Email</label>
                                     <input
                                         type="email"
                                         value={email}
@@ -165,7 +188,6 @@
                                         required
                                     />
                                 </div>
-                                
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -179,11 +201,8 @@
                                 <div className="mb-4 text-center text-green-600">
                                     ✓ Kod skickad till {email}
                                 </div>
-                                
                                 <div className="mb-6">
-                                    <label className="block text-gray-700 font-semibold mb-2">
-                                        Ange 6-siffrig kod
-                                    </label>
+                                    <label className="block text-gray-700 font-semibold mb-2">Ange 6-siffrig kod</label>
                                     <input
                                         type="text"
                                         value={otp}
@@ -194,7 +213,6 @@
                                         required
                                     />
                                 </div>
-                                
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -202,7 +220,6 @@
                                 >
                                     {loading ? 'Verifierar...' : 'Logga in'}
                                 </button>
-                                
                                 <button
                                     type="button"
                                     onClick={() => setOtpSent(false)}
@@ -217,12 +234,341 @@
             );
         }
         
-        // Main App (after login)
+        // Create Project Modal
+        function CreateProjectModal({ isOpen, onClose, onSuccess, session }) {
+            const [name, setName] = useState('');
+            const [description, setDescription] = useState('');
+            const [steps, setSteps] = useState(['']);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            
+            const addStep = () => {
+                setSteps([...steps, '']);
+            };
+            
+            const removeStep = (index) => {
+                setSteps(steps.filter((_, i) => i !== index));
+            };
+            
+            const updateStep = (index, value) => {
+                const newSteps = [...steps];
+                newSteps[index] = value;
+                setSteps(newSteps);
+            };
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                const validSteps = steps.filter(s => s.trim() !== '');
+                
+                if (validSteps.length === 0) {
+                    setError('Lägg till minst ett steg');
+                    setLoading(false);
+                    return;
+                }
+                
+                try {
+                    const result = await api.post('project/create', {
+                        session: session.sessionToken,
+                        name,
+                        description,
+                        steps: validSteps.join(',')
+                    });
+                    
+                    if (result.success) {
+                        onSuccess();
+                        onClose();
+                        setName('');
+                        setDescription('');
+                        setSteps(['']);
+                    } else {
+                        setError(result.error || 'Kunde inte skapa projekt');
+                    }
+                } catch (err) {
+                    setError('Något gick fel');
+                }
+                
+                setLoading(false);
+            };
+            
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title="Skapa nytt projekt">
+                    <form onSubmit={handleSubmit}>
+                        {error && (
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                {error}
+                            </div>
+                        )}
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-2">Projektnamn</label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="t.ex. Badrumsrenovering Andersson"
+                                required
+                            />
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-2">Beskrivning</label>
+                            <textarea
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Kort beskrivning av projektet"
+                                rows="3"
+                            />
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-2">Steg i projektet</label>
+                            {steps.map((step, index) => (
+                                <div key={index} className="flex gap-2 mb-2">
+                                    <input
+                                        type="text"
+                                        value={step}
+                                        onChange={(e) => updateStep(index, e.target.value)}
+                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder={`Steg ${index + 1}, t.ex. Rivning`}
+                                    />
+                                    {steps.length > 1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeStep(index)}
+                                            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={addStep}
+                                className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                            >
+                                + Lägg till steg
+                            </button>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {loading ? 'Skapar...' : 'Skapa projekt'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            );
+        }
+        
+        // Invite Member Modal
+        function InviteMemberModal({ isOpen, onClose, project, session }) {
+            const [email, setEmail] = useState('');
+            const [notifyOnPost, setNotifyOnPost] = useState(true);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                setSuccess('');
+                
+                try {
+                    const result = await api.post('project/add-member', {
+                        session: session.sessionToken,
+                        projectId: project.project_id,
+                        memberEmail: email,
+                        role: 'customer',
+                        notifyOnPost: notifyOnPost
+                    });
+                    
+                    if (result.success) {
+                        setSuccess('Medlem tillagd!');
+                        setEmail('');
+                        setTimeout(() => {
+                            setSuccess('');
+                            onClose();
+                        }, 2000);
+                    } else {
+                        setError(result.error || 'Kunde inte lägga till medlem');
+                    }
+                } catch (err) {
+                    setError('Något gick fel');
+                }
+                
+                setLoading(false);
+            };
+            
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title="Bjud in kund">
+                    <form onSubmit={handleSubmit}>
+                        {error && (
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                {error}
+                            </div>
+                        )}
+                        
+                        {success && (
+                            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                                {success}
+                            </div>
+                        )}
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-2">Email till kund</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="kund@example.com"
+                                required
+                            />
+                            <p className="text-sm text-gray-500 mt-2">
+                                OBS: Kontot måste finnas i systemet först. Kontakta admin för att skapa konto.
+                            </p>
+                        </div>
+                        
+                        <div className="mb-6">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={notifyOnPost}
+                                    onChange={(e) => setNotifyOnPost(e.target.checked)}
+                                    className="w-5 h-5"
+                                />
+                                <span className="text-gray-700">Skicka notiser vid nya inlägg</span>
+                            </label>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {loading ? 'Bjuder in...' : 'Bjud in'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            );
+        }
+        
+        // Create Post Modal
+        function CreatePostModal({ isOpen, onClose, step, projectId, session, onSuccess }) {
+            const [text, setText] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                
+                try {
+                    const result = await api.post('post/create', {
+                        session: session.sessionToken,
+                        projectId: projectId,
+                        stepId: step.step_id,
+                        text: text,
+                        imageFileIds: ''
+                    });
+                    
+                    if (result.success) {
+                        setText('');
+                        onSuccess();
+                        onClose();
+                    } else {
+                        setError(result.error || 'Kunde inte skapa inlägg');
+                    }
+                } catch (err) {
+                    setError('Något gick fel');
+                }
+                
+                setLoading(false);
+            };
+            
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title={`Nytt inlägg - ${step?.step_name}`}>
+                    <form onSubmit={handleSubmit}>
+                        {error && (
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                {error}
+                            </div>
+                        )}
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-semibold mb-2">Vad händer?</label>
+                            <textarea
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Skriv en uppdatering..."
+                                rows="5"
+                                required
+                            />
+                        </div>
+                        
+                        <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                            <p className="text-sm text-blue-800">
+                                💡 Tips: Bilduppladdning kommer i nästa version!
+                            </p>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {loading ? 'Publicerar...' : 'Publicera'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            );
+        }
+        
+        // Main App (project list)
         function MainApp({ session, onLogout }) {
             const [projects, setProjects] = useState([]);
             const [selectedProject, setSelectedProject] = useState(null);
             const [loading, setLoading] = useState(true);
             const [userRole, setUserRole] = useState('customer');
+            const [showCreateProject, setShowCreateProject] = useState(false);
             
             useEffect(() => {
                 loadProjects();
@@ -262,7 +608,10 @@
                         project={selectedProject}
                         session={session}
                         userRole={userRole}
-                        onBack={() => setSelectedProject(null)}
+                        onBack={() => {
+                            setSelectedProject(null);
+                            loadProjects();
+                        }}
                         onLogout={onLogout}
                     />
                 );
@@ -295,7 +644,7 @@
                             <h2 className="text-3xl font-bold text-gray-800">Mina projekt</h2>
                             {userRole === 'admin' && (
                                 <button
-                                    onClick={() => alert('Skapa projekt-dialog kommer här!')}
+                                    onClick={() => setShowCreateProject(true)}
                                     className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
                                 >
                                     + Skapa projekt
@@ -319,6 +668,13 @@
                             </div>
                         )}
                     </main>
+                    
+                    <CreateProjectModal
+                        isOpen={showCreateProject}
+                        onClose={() => setShowCreateProject(false)}
+                        onSuccess={loadProjects}
+                        session={session}
+                    />
                 </div>
             );
         }
@@ -365,8 +721,8 @@
         // Project View
         function ProjectView({ project, session, userRole, onBack, onLogout }) {
             const [steps, setSteps] = useState([]);
-            const [selectedStep, setSelectedStep] = useState(null);
             const [loading, setLoading] = useState(true);
+            const [showInvite, setShowInvite] = useState(false);
             
             useEffect(() => {
                 loadSteps();
@@ -405,17 +761,26 @@
                                 </button>
                                 <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
                             </div>
-                            <button
-                                onClick={onLogout}
-                                className="text-red-600 hover:text-red-800"
-                            >
-                                Logga ut
-                            </button>
+                            <div className="flex items-center gap-3">
+                                {userRole === 'admin' && (
+                                    <button
+                                        onClick={() => setShowInvite(true)}
+                                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm font-semibold"
+                                    >
+                                        👥 Bjud in kund
+                                    </button>
+                                )}
+                                <button
+                                    onClick={onLogout}
+                                    className="text-red-600 hover:text-red-800"
+                                >
+                                    Logga ut
+                                </button>
+                            </div>
                         </div>
                     </header>
                     
                     <main className="max-w-4xl mx-auto px-4 py-8">
-                        {/* Progress Bar */}
                         <div className="bg-white rounded-lg shadow p-6 mb-6">
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-xl font-bold text-gray-800">Projektframsteg</h2>
@@ -430,7 +795,6 @@
                             <p className="text-gray-600 mt-2">{project.description}</p>
                         </div>
                         
-                        {/* Steps Timeline */}
                         {loading ? (
                             <div className="text-center py-8 text-gray-600">Laddar steg...</div>
                         ) : steps.length === 0 ? (
@@ -444,6 +808,7 @@
                                         key={step.step_id}
                                         step={step}
                                         index={index}
+                                        projectId={project.project_id}
                                         session={session}
                                         userRole={userRole}
                                         onUpdate={loadSteps}
@@ -452,20 +817,29 @@
                             </div>
                         )}
                     </main>
+                    
+                    <InviteMemberModal
+                        isOpen={showInvite}
+                        onClose={() => setShowInvite(false)}
+                        project={project}
+                        session={session}
+                    />
                 </div>
             );
         }
         
         // Step Card
-        function StepCard({ step, index, session, userRole, onUpdate }) {
+        function StepCard({ step, index, projectId, session, userRole, onUpdate }) {
             const [expanded, setExpanded] = useState(false);
             const [posts, setPosts] = useState([]);
             const [loadingPosts, setLoadingPosts] = useState(false);
+            const [showCreatePost, setShowCreatePost] = useState(false);
+            const [completingStep, setCompletingStep] = useState(false);
             
             const isCompleted = step.status === 'completed';
             
             const loadPosts = async () => {
-                if (posts.length > 0) return; // Already loaded
+                if (posts.length > 0) return;
                 
                 setLoadingPosts(true);
                 try {
@@ -491,14 +865,37 @@
                 setExpanded(!expanded);
             };
             
+            const handleCompleteStep = async () => {
+                if (!confirm(`Markera "${step.step_name}" som klart?`)) return;
+                
+                setCompletingStep(true);
+                try {
+                    const result = await api.post('step/complete', {
+                        session: session.sessionToken,
+                        stepId: step.step_id
+                    });
+                    
+                    if (result.success) {
+                        onUpdate();
+                    } else {
+                        alert('Kunde inte markera steg som klart: ' + result.error);
+                    }
+                } catch (err) {
+                    alert('Något gick fel');
+                }
+                setCompletingStep(false);
+            };
+            
+            const handlePostCreated = () => {
+                setPosts([]);
+                loadPosts();
+            };
+            
             return (
                 <div className="bg-white rounded-lg shadow overflow-hidden">
-                    <div
-                        onClick={handleExpand}
-                        className="p-6 cursor-pointer hover:bg-gray-50 transition"
-                    >
+                    <div className="p-6">
                         <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl ${
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 ${
                                 isCompleted ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'
                             }`}>
                                 {isCompleted ? '✓' : index + 1}
@@ -509,8 +906,33 @@
                                     {isCompleted ? `Klart ${new Date(step.completed_at).toLocaleDateString('sv-SE')}` : 'Pågående'}
                                 </p>
                             </div>
-                            <div className="text-gray-400">
-                                {expanded ? '▼' : '▶'}
+                            
+                            <div className="flex items-center gap-2">
+                                {userRole === 'admin' && !isCompleted && (
+                                    <button
+                                        onClick={handleCompleteStep}
+                                        disabled={completingStep}
+                                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold disabled:opacity-50"
+                                    >
+                                        {completingStep ? '...' : '✓ Markera klar'}
+                                    </button>
+                                )}
+                                
+                                {userRole === 'admin' && (
+                                    <button
+                                        onClick={() => setShowCreatePost(true)}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
+                                    >
+                                        + Lägg till
+                                    </button>
+                                )}
+                                
+                                <button
+                                    onClick={handleExpand}
+                                    className="text-gray-400 hover:text-gray-600 text-xl"
+                                >
+                                    {expanded ? '▼' : '▶'}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -521,7 +943,9 @@
                                 <div className="text-center text-gray-600">Laddar inlägg...</div>
                             ) : posts.length === 0 ? (
                                 <div className="text-center text-gray-600">
-                                    Inga uppdateringar för detta steg än
+                                    {userRole === 'admin' 
+                                        ? 'Inga uppdateringar än. Klicka "+ Lägg till" för att skapa första inlägget!'
+                                        : 'Inga uppdateringar för detta steg än'}
                                 </div>
                             ) : (
                                 <div className="space-y-4">
@@ -558,6 +982,15 @@
                             )}
                         </div>
                     )}
+                    
+                    <CreatePostModal
+                        isOpen={showCreatePost}
+                        onClose={() => setShowCreatePost(false)}
+                        step={step}
+                        projectId={projectId}
+                        session={session}
+                        onSuccess={handlePostCreated}
+                    />
                 </div>
             );
         }
