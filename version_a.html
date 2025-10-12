@@ -10,7 +10,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Tailwind -->
+  <!-- Tailwind (ok i POC / dev) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
@@ -22,12 +22,13 @@
       --wood-mid: #d1b48a;
       --wood-dark: #b08968;
     }
+    html, body { height: 100%; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
     .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-    /* Blueprint-bakgrund (standard) */
+    /* Blueprint bakgrund (default) */
     .bg-blueprint {
       background-color: var(--bp-bg);
       background-image:
@@ -38,7 +39,7 @@
       background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
       background-attachment: fixed;
     }
-    /* Träpanel-bakgrund (om du vill byta) */
+    /* Träpanel (alternativ) */
     .bg-wood {
       background-image:
         repeating-linear-gradient(
@@ -53,18 +54,41 @@
       background-attachment: fixed;
     }
 
-    /* Tunn vit overlay för läsbarhet över mönstrad bakgrund */
+    /* Lätt vit overlay för läsbarhet */
     .page-wrap {
       background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.9));
-      min-height: 100vh;
+      min-height: 100%;
     }
+
+    /* Error overlay */
+    #errorOverlay {
+      position: fixed; z-index: 999999; inset: 0;
+      background: rgba(0,0,0,0.9); color: #fff; display: none;
+      padding: 16px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #errorOverlay pre { white-space: pre-wrap; }
   </style>
 </head>
 <body class="bg-blueprint">
   <div id="root"></div>
+  <div id="errorOverlay"><h2 style="margin:0 0 12px 0;">🚨 Ett fel uppstod</h2><pre id="errorText"></pre></div>
 
-  <!-- VIKTIGT: data-presets="env,react" så att Babel transpilerar modern JS + JSX -->
+  <!-- VIKTIGT: presets så att Babel transpilerar modern JS + JSX -->
   <script type="text/babel" data-presets="env,react">
+    // ===== Global error overlay =====
+    const showError = (err) => {
+      try {
+        const el = document.getElementById('errorOverlay');
+        const pre = document.getElementById('errorText');
+        if (!el || !pre) return;
+        pre.textContent = (err && (err.stack || err.message || String(err))) || 'Okänt fel';
+        el.style.display = 'block';
+      } catch (_) {}
+      console.error(err);
+    };
+    window.addEventListener('error', (e) => showError(e.error || e.message || e));
+    window.addEventListener('unhandledrejection', (e) => showError(e.reason || e));
+
     const { useState, useEffect, useMemo, useCallback } = React;
 
     // =========================
@@ -73,22 +97,32 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
 
     // =========================
-    // API-HJÄLPARE
+    // Säkrare fetch-hjälpare
     // =========================
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      const text = await res.text();
+      // Apps Script kan ibland returnera HTML (t.ex. auth-sida) → försök parsea JSON, annars visa första 500 tecken
+      try {
+        return JSON.parse(text);
+      } catch {
+        const preview = text.slice(0, 500);
+        throw new Error(`Kunde inte tolka JSON.\nStatus: ${res.status}\nSvar (förhandsvisning):\n${preview}`);
+      }
+    }
+
     const api = {
       async get(path, params = {}) {
         const url = new URL(API_URL);
         url.searchParams.set('path', path);
         Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-        const res = await fetch(url.toString(), { method: 'GET' });
-        return res.json();
+        return fetchJson(url.toString(), { method: 'GET' });
       },
       async post(path, data = {}) {
         const form = new URLSearchParams();
         form.set('path', path);
         Object.entries(data).forEach(([k, v]) => form.append(k, v));
-        const res = await fetch(API_URL, { method: 'POST', body: form, redirect: 'follow' });
-        return res.json();
+        return fetchJson(API_URL, { method: 'POST', body: form, redirect: 'follow' });
       }
     };
 
@@ -131,9 +165,9 @@
         'Täcker över med dammskydd…',
         'Tömmer skruvhinken…'
       ];
-
       const msgs = useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
 
+      // Shuffle
       const shuffle = (arr) => {
         const a = arr.slice();
         for (let i = a.length - 1; i > 0; i--) {
@@ -191,7 +225,7 @@
     // Bild-URL normalisering
     // =========================
     function pickBestUrl(img) {
-      if (img?.directUrl) return img.directUrl;
+      if (img && img.directUrl) return img.directUrl;
 
       const extractFileId = (u) => {
         try {
@@ -200,11 +234,11 @@
         } catch { return null; }
       };
 
-      const fileId = img?.fileId || extractFileId(img?.fullUrl);
+      const fileId = (img && img.fileId) || extractFileId(img && img.fullUrl);
       if (fileId) return `https://drive.google.com/uc?export=view&id=${fileId}`;
 
-      if (img?.thumbnailUrl) return img.thumbnailUrl;
-      if (img?.fullUrl) return img.fullUrl;
+      if (img && img.thumbnailUrl) return img.thumbnailUrl;
+      if (img && img.fullUrl) return img.fullUrl;
       return '';
     }
 
@@ -218,8 +252,8 @@
       const img = images[safeIndex] || images[0];
       const src = pickBestUrl(img);
 
-      const prev = (e) => { e?.stopPropagation(); onIndex((safeIndex - 1 + images.length) % images.length); };
-      const next = (e) => { e?.stopPropagation(); onIndex((safeIndex + 1) % images.length); };
+      const prev = (e) => { if (e) e.stopPropagation(); onIndex((safeIndex - 1 + images.length) % images.length); };
+      const next = (e) => { if (e) e.stopPropagation(); onIndex((safeIndex + 1) % images.length); };
 
       useEffect(() => {
         const onKey = (ev) => {
@@ -239,7 +273,7 @@
       const [broken, setBroken] = useState(false);
       useEffect(() => { setBroken(false); }, [src]);
 
-      const fallbackSrc = img?.thumbnailUrl || img?.fullUrl || '';
+      const fallbackSrc = (img && (img.thumbnailUrl || img.fullUrl)) || '';
 
       return (
         <div className="fixed inset-0 z-[100000] bg-black/90 flex flex-col" onClick={onClose}>
@@ -306,7 +340,7 @@
           const res = await api.post('auth/verify-otp', { email, code: otp, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Ogiltig kod');
           const me = await api.get('me', { session: res.sessionToken });
-          onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'customer' });
+          onLogin({ email: res.email, sessionToken: res.sessionToken, role: (me && me.role) || 'customer' });
         } catch (err) {
           setError(err.message);
         } finally { setLoading(false); }
@@ -413,7 +447,7 @@
         }
       }, [post.post_id, session.email]);
 
-      useEffect(() => { load(); }, [load]);
+      useEffect(() => { load().catch(showError); }, [load]);
 
       const toggle = async () => {
         setBusy(true);
@@ -424,6 +458,8 @@
             await api.post('post/reaction/add', { session: session.sessionToken, postId: post.post_id, type: 'like' });
           }
           await load();
+        } catch (e) {
+          showError(e);
         } finally { setBusy(false); }
       };
 
@@ -443,20 +479,27 @@
 
       const load = async () => {
         setLoading(true);
-        const res = await api.get('post/comments', { postId });
-        if (res.success) setItems(res.comments || []);
-        setLoading(false);
+        try {
+          const res = await api.get('post/comments', { postId });
+          if (res.success) setItems(res.comments || []);
+        } catch (e) {
+          showError(e);
+        } finally {
+          setLoading(false);
+        }
       };
       useEffect(()=>{ load(); }, [postId]);
 
       const submit = async (e) => {
         e.preventDefault();
         if (!text.trim()) return;
-        const res = await api.post('post/comment/add', { session: session.sessionToken, postId, text });
-        if (res.success) {
-          setText('');
-          load();
-        }
+        try {
+          const res = await api.post('post/comment/add', { session: session.sessionToken, postId, text });
+          if (res.success) {
+            setText('');
+            load();
+          }
+        } catch (e2) { showError(e2); }
       };
 
       return (
@@ -677,7 +720,7 @@
       };
 
       return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Nytt inlägg — ${step?.step_name}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={`Nytt inlägg — ${step && step.step_name}`}>
           {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{error}</div>}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -728,7 +771,7 @@
             <button onClick={()=>setShowCreatePost(true)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">+ Inlägg</button>
           )}
           <CreatePostModal
-            isOpen={showCreatePost}
+            isOpen={isOpen=showCreatePost}
             onClose={()=>setShowCreatePost(false)}
             step={step}
             projectId={projectId}
@@ -751,9 +794,11 @@
 
       const load = async () => {
         setLoading(true);
-        const res = await api.get('project/feed', { projectId, session: session.sessionToken });
-        if (res.success) setFeed(res.feed || []);
-        setLoading(false);
+        try {
+          const res = await api.get('project/feed', { projectId, session: session.sessionToken });
+          if (res.success) setFeed(res.feed || []);
+        } catch (e) { showError(e); }
+        finally { setLoading(false); }
       };
       useEffect(()=>{ load(); }, [projectId]);
 
@@ -781,7 +826,7 @@
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                     {post.images.map((img,i)=>(
                       <img key={i}
-                        src={img.thumbnailUrl || pickBestUrl(img)}
+                        src={(img && img.thumbnailUrl) || pickBestUrl(img)}
                         loading="lazy"
                         alt="Bild"
                         className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
@@ -817,9 +862,11 @@
 
       const loadStepsWithCounts = async () => {
         setLoadingCounts(true);
-        const res = await api.get('project/steps-with-counts', { projectId: project.project_id, session: session.sessionToken });
-        if (res.success) setStepsWithCounts(res.steps || []);
-        setLoadingCounts(false);
+        try {
+          const res = await api.get('project/steps-with-counts', { projectId: project.project_id, session: session.sessionToken });
+          if (res.success) setStepsWithCounts(res.steps || []);
+        } catch (e) { showError(e); }
+        finally { setLoadingCounts(false); }
       };
       useEffect(()=>{ loadStepsWithCounts(); }, [project.project_id]);
 
@@ -885,7 +932,7 @@
     }
 
     // =========================
-    // HUVUDAPP
+    // HUVUDAPP (med “Booting…”)
     // =========================
     function App() {
       const [session, setSession] = useState(null);
@@ -896,22 +943,24 @@
       const [showCreateProject, setShowCreateProject] = useState(false);
       const [showCreateAccount, setShowCreateAccount] = useState(false);
 
-      useEffect(()=>{
+      // Mini-“booting” så vi ser att React faktiskt renderar
+      useEffect(() => {
         const saved = localStorage.getItem('byggflode_session');
         if (saved) setSession(JSON.parse(saved));
-        setLoadingApp(false);
-      },[]);
+        const t = setTimeout(() => setLoadingApp(false), 150); // kort delay för att visa loader
+        return () => clearTimeout(t);
+      }, []);
 
       useEffect(()=>{
         if (session) loadProjects();
-      }, [session?.sessionToken]);
+      }, [session && session.sessionToken]);
 
       const onLogin = (sess) => {
         setSession(sess);
         localStorage.setItem('byggflode_session', JSON.stringify(sess));
       };
       const onLogout = async () => {
-        try { if (session?.sessionToken) await api.post('auth/logout', { session: session.sessionToken }); } catch {}
+        try { if (session && session.sessionToken) await api.post('auth/logout', { session: session.sessionToken }); } catch (e) { /* ignore */ }
         setSession(null);
         localStorage.removeItem('byggflode_session');
       };
@@ -919,21 +968,29 @@
       const loadProjects = async () => {
         if (!session) return;
         setLoadingProjects(true);
-        const res = await api.get('projects', { session: session.sessionToken });
-        if (res.success) setProjects(res.projects || []);
-        setLoadingProjects(false);
+        try {
+          const res = await api.get('projects', { session: session.sessionToken });
+          if (res.success) setProjects(res.projects || []);
+        } catch (e) { showError(e); }
+        finally { setLoadingProjects(false); }
       };
 
       if (loadingApp) {
         return (
           <div className="min-h-screen flex items-center justify-center">
-            <FunLoader />
+            <div className="page-wrap rounded-xl p-8">
+              <div className="text-gray-700 mb-4 text-center">Startar Byggflöde…</div>
+              <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+            </div>
           </div>
         );
       }
 
       if (!session) return <LoginPage onLogin={onLogin} />;
 
+      const isAdmin = session.role === 'admin';
+
+      // Om projekt öppnats → visa projektsida
       if (selectedProject) {
         return (
           <>
@@ -949,8 +1006,7 @@
         );
       }
 
-      const isAdmin = session.role === 'admin';
-
+      // Kund: om bara ett projekt → öppna direkt feed
       if (!isAdmin && projects.length === 1) {
         setSelectedProject(projects[0]);
         return null;
@@ -995,8 +1051,13 @@
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    // Boot: fånga ev. init-fel
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    } catch (e) {
+      showError(e);
+    }
   </script>
 </body>
 </html>
