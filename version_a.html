@@ -14,9 +14,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* Bas */
     :root {
-      --bp-bg: #0e3a68;       /* blueprint blå */
+      --bp-bg: #0e3a68;
       --bp-grid: rgba(255,255,255,0.08);
       --bp-grid-strong: rgba(255,255,255,0.12);
       --wood-light: #e7d2b4;
@@ -26,26 +25,20 @@
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
-    .line-clamp-3 {
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-    /* --- RITNINGSBAKGRUND (blueprint) --- */
-    .bg-wood {
-      /* Grundfärg */
+    /* Blueprint-bakgrund (standard) */
+    .bg-blueprint {
       background-color: var(--bp-bg);
-      /* Tunn rutnätslinje 16px */
       background-image:
         linear-gradient(transparent 15px, var(--bp-grid) 16px),
         linear-gradient(90deg, transparent 15px, var(--bp-grid) 16px),
-        /* Starkare linje var 80px */
         linear-gradient(transparent 79px, var(--bp-grid-strong) 80px),
         linear-gradient(90deg, transparent 79px, var(--bp-grid-strong) 80px);
       background-size: 16px 16px, 16px 16px, 80px 80px, 80px 80px;
       background-attachment: fixed;
     }
-
-    /* --- TRÄPANEL-BAKGRUND (om du vill byta) --- */
+    /* Träpanel-bakgrund (om du vill byta) */
     .bg-wood {
       background-image:
         repeating-linear-gradient(
@@ -60,7 +53,7 @@
       background-attachment: fixed;
     }
 
-    /* Tunna kort får vit bakgrund för läsbarhet */
+    /* Tunn vit overlay för läsbarhet över mönstrad bakgrund */
     .page-wrap {
       background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.9));
       min-height: 100vh;
@@ -70,13 +63,13 @@
 <body class="bg-blueprint">
   <div id="root"></div>
 
-  <script type="text/babel">
+  <!-- VIKTIGT: data-presets="env,react" så att Babel transpilerar modern JS + JSX -->
+  <script type="text/babel" data-presets="env,react">
     const { useState, useEffect, useMemo, useCallback } = React;
 
     // =========================
     // KONFIG
     // =========================
-    // Byt till din egen Web App URL om du har uppdaterat deploy:
     const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
 
     // =========================
@@ -127,7 +120,6 @@
         'Ställer laserpasset…',
         'Rullar ut tätskiktet…',
         'Kaffepaus ☕ (snart klart)…',
-        // Nya korta på samma tema:
         'Skyddsglasögon på…',
         'Spikar sista listen…',
         'Bär in kakelkartonger…',
@@ -140,12 +132,8 @@
         'Tömmer skruvhinken…'
       ];
 
-      const msgs = React.useMemo(
-        () => (textList && textList.length ? textList : fallback),
-        [textList]
-      );
+      const msgs = useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
 
-      // Fisher–Yates shuffle
       const shuffle = (arr) => {
         const a = arr.slice();
         for (let i = a.length - 1; i > 0; i--) {
@@ -155,20 +143,15 @@
         return a;
       };
 
-      // Start med slumpad ordning
-      const [order, setOrder] = React.useState(() =>
-        shuffle([...Array(msgs.length).keys()])
-      );
-      const [idx, setIdx] = React.useState(0);
+      const [order, setOrder] = useState(() => shuffle([...Array(msgs.length).keys()]));
+      const [idx, setIdx] = useState(0);
 
-      // Om listan ändras → blanda om och börja om
-      React.useEffect(() => {
+      useEffect(() => {
         setOrder(shuffle([...Array(msgs.length).keys()]));
         setIdx(0);
       }, [msgs.length]);
 
-      // Cykla igenom blandad ordning, blanda om när vi når slutet
-      React.useEffect(() => {
+      useEffect(() => {
         const id = setInterval(() => {
           setIdx((prev) => {
             const next = prev + 1;
@@ -205,9 +188,8 @@
     }
 
     // =========================
-    // Bild-URL-normalisering
+    // Bild-URL normalisering
     // =========================
-    // Väljer bästa möjliga inline-URL för Drive-bild
     function pickBestUrl(img) {
       if (img?.directUrl) return img.directUrl;
 
@@ -219,9 +201,7 @@
       };
 
       const fileId = img?.fileId || extractFileId(img?.fullUrl);
-      if (fileId) {
-        return `https://drive.google.com/uc?export=view&id=${fileId}`;
-      }
+      if (fileId) return `https://drive.google.com/uc?export=view&id=${fileId}`;
 
       if (img?.thumbnailUrl) return img.thumbnailUrl;
       if (img?.fullUrl) return img.fullUrl;
@@ -229,7 +209,7 @@
     }
 
     // =========================
-    // HELSKÄRMS-LIGHTBOX (robust)
+    // HELSKÄRMS-LIGHTBOX
     // =========================
     function ImageLightbox({ isOpen, images, index, onClose, onIndex }) {
       if (!isOpen || !images || images.length === 0) return null;
@@ -241,8 +221,7 @@
       const prev = (e) => { e?.stopPropagation(); onIndex((safeIndex - 1 + images.length) % images.length); };
       const next = (e) => { e?.stopPropagation(); onIndex((safeIndex + 1) % images.length); };
 
-      // ESC/vänster/höger + lås body-scroll
-      React.useEffect(() => {
+      useEffect(() => {
         const onKey = (ev) => {
           if (ev.key === 'Escape') onClose();
           if (ev.key === 'ArrowLeft') prev();
@@ -257,9 +236,8 @@
         };
       }, [onClose]);
 
-      // Fallback om src fallerar
-      const [broken, setBroken] = React.useState(false);
-      React.useEffect(() => { setBroken(false); }, [src]);
+      const [broken, setBroken] = useState(false);
+      useEffect(() => { setBroken(false); }, [src]);
 
       const fallbackSrc = img?.thumbnailUrl || img?.fullUrl || '';
 
@@ -678,7 +656,6 @@
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
         try {
-          // Parallell uppladdning
           const uploads = await Promise.all((files || []).map(async (f) => {
             const base64 = await readFileAsBase64(f);
             return api.post('file/upload', {
@@ -729,7 +706,7 @@
     // =========================
     function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
       const isCompleted = step.status === 'completed';
-      const [showCreatePost, setShowCreatePost] = React.useState(false);
+      const [showCreatePost, setShowCreatePost] = useState(false);
 
       return (
         <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
@@ -766,7 +743,6 @@
       const [feed, setFeed] = useState([]);
       const [loading, setLoading] = useState(true);
 
-      // Lightbox state
       const [lightboxOpen, setLightboxOpen] = useState(false);
       const [lightboxImages, setLightboxImages] = useState([]);
       const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -837,7 +813,7 @@
     function ProjectView({ project, session, userRole, onBack, onLogout }) {
       const [stepsWithCounts, setStepsWithCounts] = useState([]);
       const [loadingCounts, setLoadingCounts] = useState(true);
-      const [tab, setTab] = useState('feed'); // 'feed' | 'steps'
+      const [tab, setTab] = useState('feed');
 
       const loadStepsWithCounts = async () => {
         setLoadingCounts(true);
@@ -912,7 +888,7 @@
     // HUVUDAPP
     // =========================
     function App() {
-      const [session, setSession] = useState(null); // {email, sessionToken, role}
+      const [session, setSession] = useState(null);
       const [loadingApp, setLoadingApp] = useState(true);
       const [projects, setProjects] = useState([]);
       const [loadingProjects, setLoadingProjects] = useState(false);
@@ -958,7 +934,6 @@
 
       if (!session) return <LoginPage onLogin={onLogin} />;
 
-      // Om projekt öppnats → visa projektsida
       if (selectedProject) {
         return (
           <>
@@ -974,10 +949,8 @@
         );
       }
 
-      // ROOT DASHBOARD
       const isAdmin = session.role === 'admin';
 
-      // Kund: om bara ett projekt → öppna direkt feed
       if (!isAdmin && projects.length === 1) {
         setSelectedProject(projects[0]);
         return null;
@@ -1016,14 +989,12 @@
             )}
           </main>
 
-          {/* Modaler */}
           <CreateProjectModal isOpen={showCreateProject} onClose={()=>setShowCreateProject(false)} onSuccess={loadProjects} session={session}/>
           <CreateAccountModal isOpen={showCreateAccount} onClose={()=>setShowCreateAccount(false)} session={session}/>
         </>
       );
     }
 
-    // Render
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
