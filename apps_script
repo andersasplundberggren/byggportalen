@@ -1,14 +1,11 @@
-// =============================================================================
-// BYGGFLÖDE - Apps Script Backend - DEL 1 av 4
-// =============================================================================
+/************************************************************
+ * BYGGFLÖDE - Backend v3.2 (admin via SETTINGS, OTP, feed)
+ * Kräver: Advanced Drive Service (Drive) aktiverat
+ ************************************************************/
 
-// -----------------------------------------------------------------------------
-// KONFIGURATION
-// -----------------------------------------------------------------------------
 var CONFIG = {
-  SPREADSHEET_ID: '1T_SXsx3mgvPJIpdQRP3gbfwYRunqkXWgR_I8Dtlq510',
+  SPREADSHEET_ID: '1T_SXsx3mgvPJIpdQRP3gbfwYRunqkXWgR_I8Dtlq510', // <-- BYT TILL DITT
   MAIN_FOLDER_NAME: 'Byggflöde',
-  
   SHEETS: {
     ACCOUNTS: 'ACCOUNTS',
     PROJECTS: 'PROJECTS',
@@ -19,1317 +16,792 @@ var CONFIG = {
     SESSIONS: 'SESSIONS',
     OTP: 'OTP',
     IMAGE_METADATA: 'IMAGE_METADATA',
-    PROJECT_STEPS: 'PROJECT_STEPS'
+    PROJECT_STEPS: 'PROJECT_STEPS',
+    SETTINGS: 'SETTINGS'
   }
 };
 
-// -----------------------------------------------------------------------------
-// SETUP FUNCTIONS
-// -----------------------------------------------------------------------------
+/* =========================
+   SETUP / VERIFIERING
+   ========================= */
 
-function SETUP_addProjectStepsSheet() {
-  var ss = getSpreadsheet();
-  var sheet = ss.getSheetByName('PROJECT_STEPS');
-  if (!sheet) {
-    sheet = ss.insertSheet('PROJECT_STEPS');
-    sheet.appendRow(['step_id','project_id','step_name','step_order','status','completed_at','created_at']);
-    Logger.log('✓ PROJECT_STEPS sheet skapad!');
-  } else {
-    Logger.log('PROJECT_STEPS finns redan');
-  }
-}
+function SETUP_ensureAllSheets() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 
-function SETUP_addStepIdToPosts() {
-  var ss = getSpreadsheet();
-  var postsSheet = ss.getSheetByName('POSTS');
-  if (postsSheet) {
-    var headers = postsSheet.getRange(1, 1, 1, postsSheet.getLastColumn()).getValues()[0];
-    if (headers.indexOf('step_id') === -1) {
-      var lastCol = postsSheet.getLastColumn();
-      postsSheet.getRange(1, lastCol + 1).setValue('step_id');
-      Logger.log('✓ step_id kolumn tillagd i POSTS!');
-    } else {
-      Logger.log('step_id finns redan i POSTS');
+  function ensure(name, headers) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) {
+      sh = ss.insertSheet(name);
+      sh.appendRow(headers);
+      Logger.log('Skapade sheet: ' + name);
     }
   }
+
+  ensure(CONFIG.SHEETS.ACCOUNTS, ['account_id','email','name','role','created_at','status']);
+  ensure(CONFIG.SHEETS.PROJECTS, ['project_id','name','description','owner_email','created_at','project_folder_id','images_folder_id','documents_folder_id','status','completion_percentage']);
+  ensure(CONFIG.SHEETS.MEMBERS, ['project_id','email','role','added_at','notify_on_post']);
+  ensure(CONFIG.SHEETS.POSTS, ['post_id','project_id','author_email','text','image_file_ids','created_at','status','updated_at','step_id']);
+  ensure(CONFIG.SHEETS.PROJECT_STEPS, ['step_id','project_id','step_name','step_order','status','completed_at','created_at']);
+  ensure(CONFIG.SHEETS.REACTIONS, ['post_id','user_email','type','created_at','deleted_at']);
+  ensure(CONFIG.SHEETS.COMMENTS, ['comment_id','post_id','user_email','text','created_at']);
+  ensure(CONFIG.SHEETS.SESSIONS, ['session_token','email','expires_at','created_at','ip_address','user_agent']);
+  ensure(CONFIG.SHEETS.OTP, ['email','project_id','code_hash','sent_at','expires_at','used_at']);
+  ensure(CONFIG.SHEETS.IMAGE_METADATA, ['file_id','project_id','uploader_email','uploaded_at','mimeType','name','size']);
+  // SETTINGS + default
+  getSettingsSheet();
+  if (!getSetting('ADMIN_USERNAME')) setSetting('ADMIN_USERNAME','admin');
+  if (!getSetting('ADMIN_PASSWORD_6')) setSetting('ADMIN_PASSWORD_6','123456');
+  if (!getSetting('ADMIN_EMAIL')) setSetting('ADMIN_EMAIL','admin@byggflode.local');
+
+  Logger.log('✓ Setup klart');
 }
 
-function SETUP_verifyAllSheets() {
-  Logger.log('=== VERIFIERAR ALLA SHEETS ===\n');
-  var sheets = ['ACCOUNTS','PROJECTS','MEMBERS','POSTS','PROJECT_STEPS','REACTIONS','COMMENTS','SESSIONS','OTP'];
-  for (var i = 0; i < sheets.length; i++) {
-    var sheetName = sheets[i];
-    try {
-      var sheet = getSheet(sheetName);
-      var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      Logger.log('✓ ' + sheetName + ':');
-      Logger.log('  ' + JSON.stringify(headers));
-    } catch (e) {
-      Logger.log('✗ ' + sheetName + ': SAKNAS eller FEL');
-    }
-  }
-  Logger.log('\n=== VERIFIERING KLAR ===');
-}
-
-// -----------------------------------------------------------------------------
-// HJÄLPFUNKTIONER FÖR SHEET-ACCESS
-// -----------------------------------------------------------------------------
+/* =========================
+   GENERELLA HJÄLPARE
+   ========================= */
 
 function getSpreadsheet() {
   return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 }
 
-function getSheet(sheetName) {
-  var ss = getSpreadsheet();
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    throw new Error('Sheet inte hittades: ' + sheetName);
-  }
-  return sheet;
+function getSheet(name) {
+  var sh = getSpreadsheet().getSheetByName(name);
+  if (!sh) throw new Error('SHEET saknas: ' + name);
+  return sh;
 }
 
-function getSheetData(sheetName) {
-  var sheet = getSheet(sheetName);
-  var data = sheet.getDataRange().getValues();
-  if (data.length === 0) {
-    return [];
-  }
+function getSheetData(name) {
+  var sh = getSheet(name);
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
   var headers = data[0];
   var rows = data.slice(1);
-  var result = [];
-  for (var i = 0; i < rows.length; i++) {
-    var obj = {};
-    for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = rows[i][j];
+  return rows.map(function(r){
+    var o = {};
+    headers.forEach(function(h, i){ o[String(h)] = r[i]; });
+    return o;
+  });
+}
+
+function appendToSheet(name, values) {
+  getSheet(name).appendRow(values);
+}
+
+function updateSheetRow(name, keyColumn, keyValue, updates) {
+  var sh = getSheet(name);
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return false;
+  var headers = data[0];
+  var keyIdx = headers.indexOf(keyColumn);
+  if (keyIdx < 0) throw new Error('Kolumn saknas: ' + keyColumn);
+
+  for (var i=1;i<data.length;i++){
+    if (String(data[i][keyIdx]) === String(keyValue)) {
+      Object.keys(updates).forEach(function(col){
+        var idx = headers.indexOf(col);
+        if (idx >= 0) sh.getRange(i+1, idx+1).setValue(updates[col]);
+      });
+      return true;
     }
-    result.push(obj);
   }
-  return result;
+  return false;
 }
 
-function appendToSheet(sheetName, values) {
-  var sheet = getSheet(sheetName);
-  sheet.appendRow(values);
-  return true;
-}
-
-function findRowByColumn(sheetName, columnName, value) {
-  var data = getSheetData(sheetName);
-  for (var i = 0; i < data.length; i++) {
-    if (data[i][columnName] === value) {
-      return data[i];
-    }
+function findRowByColumn(name, col, val) {
+  var rows = getSheetData(name);
+  for (var i=0;i<rows.length;i++){
+    if (String(rows[i][col]) === String(val)) return rows[i];
   }
   return null;
 }
 
-function updateSheetRow(sheetName, columnName, value, updates) {
-  try {
-    var sheet = getSheet(sheetName);
-    var data = sheet.getDataRange().getValues();
-    var headers = data[0];
-    var columnIndex = headers.indexOf(columnName);
-    if (columnIndex === -1) {
-      throw new Error('Kolumn hittades inte: ' + columnName);
-    }
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][columnIndex] === value) {
-        for (var updateCol in updates) {
-          var updateIndex = headers.indexOf(updateCol);
-          if (updateIndex !== -1) {
-            sheet.getRange(i + 1, updateIndex + 1).setValue(updates[updateCol]);
-          }
-        }
-        return true;
-      }
-    }
-    return false;
-  } catch (error) {
-    Logger.log('Fel vid uppdatering: ' + error.toString());
-    return false;
+/* =========================
+   SETTINGS (admin inlogg)
+   ========================= */
+
+function getSettingsSheet() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName(CONFIG.SHEETS.SETTINGS);
+  if (!sh) {
+    sh = ss.insertSheet(CONFIG.SHEETS.SETTINGS);
+    sh.appendRow(['key','value']);
   }
+  return sh;
 }
 
-// -----------------------------------------------------------------------------
-// DRIVE - MAPPHANTERING
-// -----------------------------------------------------------------------------
-
-function getOrCreateFolder(folderName, parentFolder) {
-  var folders = parentFolder.getFoldersByName(folderName);
-  if (folders.hasNext()) {
-    return folders.next();
-  } else {
-    Logger.log('Skapar mapp: ' + folderName);
-    return parentFolder.createFolder(folderName);
+function getSetting(key) {
+  var sh = getSettingsSheet();
+  var data = sh.getDataRange().getValues();
+  for (var i=1;i<data.length;i++){
+    if (String(data[i][0]).trim() === key) return data[i][1] || '';
   }
+  return '';
 }
+
+function setSetting(key, value) {
+  var sh = getSettingsSheet();
+  var data = sh.getDataRange().getValues();
+  for (var i=1;i<data.length;i++){
+    if (String(data[i][0]).trim() === key) {
+      sh.getRange(i+1, 2).setValue(value);
+      return true;
+    }
+  }
+  sh.appendRow([key, value]);
+  return true;
+}
+
+/* =========================
+   DRIVE / MAPPAR / BILDER
+   ========================= */
 
 function sanitizeFolderName(name) {
-  return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50).replace(/^\s+|\s+$/g, '');
+  return String(name).replace(/[<>:"/\\|?*]/g,'_').substring(0,50).trim();
+}
+
+function getOrCreateFolder(folderName, parentFolder) {
+  var it = parentFolder.getFoldersByName(folderName);
+  return it.hasNext() ? it.next() : parentFolder.createFolder(folderName);
 }
 
 function createProjectFolderStructure(projectId, projectName) {
-  try {
-    Logger.log('Skapar mappstruktur för projekt: ' + projectId);
-    var rootFolder = getOrCreateFolder(CONFIG.MAIN_FOLDER_NAME, DriveApp.getRootFolder());
-    var projectFolderName = sanitizeFolderName(projectName) + '_' + projectId;
-    var projectFolder = getOrCreateFolder(projectFolderName, rootFolder);
-    var imagesFolder = getOrCreateFolder('Bilder', projectFolder);
-    var documentsFolder = getOrCreateFolder('Dokument', projectFolder);
-    var result = {
-      projectFolderId: projectFolder.getId(),
-      imagesFolderId: imagesFolder.getId(),
-      documentsFolderId: documentsFolder.getId(),
-      projectFolderUrl: projectFolder.getUrl()
-    };
-    Logger.log('Mappstruktur skapad: ' + JSON.stringify(result));
-    return result;
-  } catch (error) {
-    Logger.log('Fel vid skapande av mappstruktur: ' + error.toString());
-    throw error;
-  }
+  var root = getOrCreateFolder(CONFIG.MAIN_FOLDER_NAME, DriveApp.getRootFolder());
+  var projectFolder = getOrCreateFolder(sanitizeFolderName(projectName) + '_' + projectId, root);
+  var imagesFolder = getOrCreateFolder('Bilder', projectFolder);
+  var documentsFolder = getOrCreateFolder('Dokument', projectFolder);
+  return {
+    projectFolderId: projectFolder.getId(),
+    imagesFolderId: imagesFolder.getId(),
+    documentsFolderId: documentsFolder.getId(),
+    projectFolderUrl: projectFolder.getUrl()
+  };
 }
 
-function shareProjectFolderWithMember(projectFolderId, memberEmail, isAdmin) {
+// Tyst delning (utan mail) – kräver Advanced Drive Service
+function silentShareFolder(projectFolderId, memberEmail, isEditor) {
   try {
-    var folder = DriveApp.getFolderById(projectFolderId);
-    if (isAdmin) {
-      folder.addEditor(memberEmail);
-      Logger.log('Gav editor-rättigheter till ' + memberEmail);
-    } else {
-      folder.addViewer(memberEmail);
-      Logger.log('Gav viewer-rättigheter till ' + memberEmail);
-    }
+    var perm = {
+      'role': isEditor ? 'writer' : 'reader',
+      'type': 'user',
+      'emailAddress': memberEmail
+    };
+    // sendNotificationEmails=false -> inget Google-mail
+    Drive.Permissions.insert(perm, projectFolderId, {sendNotificationEmails: false});
     return true;
-  } catch (error) {
-    Logger.log('Fel vid delning av mapp: ' + error.toString());
+  } catch (e) {
+    Logger.log('silentShareFolder fel: ' + e);
     return false;
   }
 }
 
 function removeProjectFolderAccess(projectFolderId, memberEmail) {
   try {
-    var folder = DriveApp.getFolderById(projectFolderId);
-    folder.removeViewer(memberEmail);
-    folder.removeEditor(memberEmail);
-    Logger.log('Tog bort åtkomst för ' + memberEmail);
+    var perms = Drive.Permissions.list(projectFolderId).items || [];
+    for (var i=0;i<perms.length;i++){
+      if (perms[i].emailAddress === memberEmail) {
+        Drive.Permissions.delete(projectFolderId, perms[i].id);
+      }
+    }
     return true;
-  } catch (error) {
-    Logger.log('Fel vid borttagning av åtkomst: ' + error.toString());
+  } catch (e) {
+    Logger.log('Fel vid borttagning av åtkomst: ' + e);
     return false;
   }
 }
 
-// -----------------------------------------------------------------------------
-// AUTENTISERING
-// -----------------------------------------------------------------------------
+// Direkt-URL och thumb från fileId
+function makeDirectUrl(fileId) {
+  return 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(fileId);
+}
+function makeThumbUrl(fileId, w) {
+  var width = w || 800;
+  return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(fileId) + '&sz=w' + width;
+}
+
+/* =========================
+   AUTENTISERING (OTP / ADMIN)
+   ========================= */
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
-
 function hashOTP(code) {
-  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, code + 'BYGGFLODE_SALT'));
+  return Utilities.base64Encode(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, code + 'BYGGFLODE_SALT')
+  );
 }
 
 function sendOTPEmail(email, code, projectName) {
-  try {
-    var subject = 'Din inloggningskod till Byggflöde';
-    var body = 'Hej!\n\nDin inloggningskod är: ' + code + '\n\nKoden är giltig i 15 minuter.\n\n';
-    if (projectName) {
-      body += 'Projekt: ' + projectName + '\n\n';
-    }
-    body += 'Om du inte begärt denna kod kan du ignorera detta meddelande.\n\nMed vänlig hälsning,\nByggflöde';
-    MailApp.sendEmail(email, subject, body);
-    Logger.log('OTP skickat till: ' + email);
-    return true;
-  } catch (error) {
-    Logger.log('Fel vid skickning av email: ' + error.toString());
-    return false;
-  }
-}
-
-function requestOTP(email, projectId) {
-  try {
-    var account = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', email);
-    if (!account) {
-      return {success: false, error: 'Kontot hittades inte'};
-    }
-    if (projectId) {
-      var member = findMembership(projectId, email);
-      if (!member) {
-        return {success: false, error: 'Du har inte åtkomst till detta projekt'};
-      }
-    }
-    var code = generateOTP();
-    var codeHash = hashOTP(code);
-    var sentAt = new Date().toISOString();
-    var expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    appendToSheet(CONFIG.SHEETS.OTP, [email, projectId || '', codeHash, sentAt, expiresAt, '']);
-    var projectName = null;
-    if (projectId) {
-      var project = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
-      if (project) {
-        projectName = project.name;
-      }
-    }
-    var emailSent = sendOTPEmail(email, code, projectName);
-    if (!emailSent) {
-      return {success: false, error: 'Kunde inte skicka email'};
-    }
-    return {success: true, message: 'OTP-kod skickad till ' + email};
-  } catch (error) {
-    Logger.log('Fel vid skapande av OTP: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function verifyOTP(email, code, projectId) {
-  try {
-    var codeHash = hashOTP(code);
-    var otpSheet = getSheet(CONFIG.SHEETS.OTP);
-    var data = otpSheet.getDataRange().getValues();
-    for (var i = data.length - 1; i >= 1; i--) {
-      var row = data[i];
-      var rowEmail = row[0];
-      var rowProjectId = row[1];
-      var rowCodeHash = row[2];
-      var rowExpiresAt = row[4];
-      var rowUsedAt = row[5];
-      if (rowEmail === email && rowCodeHash === codeHash && (projectId === '' || rowProjectId === projectId || rowProjectId === '')) {
-        if (rowUsedAt) {
-          return {success: false, error: 'Koden har redan använts'};
-        }
-        var expiresAt = new Date(rowExpiresAt);
-        if (expiresAt < new Date()) {
-          return {success: false, error: 'Koden har gått ut'};
-        }
-        otpSheet.getRange(i + 1, 6).setValue(new Date().toISOString());
-        var session = createSession(email);
-        return {success: true, sessionToken: session.token, email: email, message: 'Inloggning lyckades'};
-      }
-    }
-    return {success: false, error: 'Ogiltig kod'};
-  } catch (error) {
-    Logger.log('Fel vid verifiering av OTP: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  var subject = 'Din inloggningskod till Byggflöde';
+  var body = 'Hej!\n\nDin inloggningskod är: ' + code + '\n\nKoden är giltig i 15 minuter.\n\n';
+  if (projectName) body += 'Projekt: ' + projectName + '\n\n';
+  body += 'Om du inte begärt denna kod kan du ignorera detta meddelande.\n\nMed vänlig hälsning,\nByggflöde';
+  MailApp.sendEmail(email, subject, body);
+  return true;
 }
 
 function createSession(email) {
-  var sessionToken = Utilities.getUuid();
+  var token = Utilities.getUuid();
   var createdAt = new Date().toISOString();
-  var expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  appendToSheet(CONFIG.SHEETS.SESSIONS, [sessionToken, email, expiresAt, createdAt, '', '']);
-  Logger.log('Session skapad för: ' + email);
-  return {token: sessionToken, email: email, expiresAt: expiresAt};
+  var expiresAt = new Date(Date.now() + 7*24*60*60*1000).toISOString();
+  appendToSheet(CONFIG.SHEETS.SESSIONS, [token, email, expiresAt, createdAt, '', '']);
+  return { token: token, email: email, expiresAt: expiresAt };
 }
 
 function verifySession(sessionToken) {
-  try {
-    var session = findRowByColumn(CONFIG.SHEETS.SESSIONS, 'session_token', sessionToken);
-    if (!session) {
-      return {valid: false, error: 'Session hittades inte'};
-    }
-    var expiresAt = new Date(session.expires_at);
-    if (expiresAt < new Date()) {
-      return {valid: false, error: 'Session har gått ut'};
-    }
-    return {valid: true, email: session.email, expiresAt: session.expires_at};
-  } catch (error) {
-    Logger.log('Fel vid verifiering av session: ' + error.toString());
-    return {valid: false, error: error.toString()};
-  }
+  var s = findRowByColumn(CONFIG.SHEETS.SESSIONS, 'session_token', sessionToken);
+  if (!s) return { valid: false, error: 'Session saknas' };
+  if (new Date(s.expires_at) < new Date()) return { valid: false, error: 'Session har gått ut' };
+  return { valid: true, email: s.email, expiresAt: s.expires_at };
 }
 
-function logout(sessionToken) {
-  try {
-    var sessionsSheet = getSheet(CONFIG.SHEETS.SESSIONS);
-    var data = sessionsSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === sessionToken) {
-        sessionsSheet.deleteRow(i + 1);
-        Logger.log('Session borttagen');
-        return {success: true, message: 'Utloggad'};
-      }
-    }
-    return {success: false, error: 'Session hittades inte'};
-  } catch (error) {
-    Logger.log('Fel vid utloggning: ' + error.toString());
-    return {success: false, error: error.toString()};
+function requestOTP(email, projectId) {
+  var acc = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', email);
+  if (!acc) return { success: false, error: 'Kontot hittades inte' };
+  if (projectId) {
+    var mem = findMembership(projectId, email);
+    if (!mem) return { success: false, error: 'Du har inte åtkomst till detta projekt' };
   }
+  var code = generateOTP();
+  var codeHash = hashOTP(code);
+  var sentAt = new Date().toISOString();
+  var expiresAt = new Date(Date.now()+15*60*1000).toISOString();
+  appendToSheet(CONFIG.SHEETS.OTP, [email, projectId || '', codeHash, sentAt, expiresAt, '']);
+
+  var projectName = '';
+  if (projectId) {
+    var p = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
+    if (p) projectName = p.name;
+  }
+  sendOTPEmail(email, code, projectName);
+  return { success: true, message: 'OTP skickad' };
 }
+
+function verifyOTP(email, code, projectId) {
+  var codeHash = hashOTP(code);
+  var sh = getSheet(CONFIG.SHEETS.OTP);
+  var data = sh.getDataRange().getValues();
+  for (var i=data.length-1; i>=1; i--) {
+    var row = data[i];
+    var rowEmail = row[0], rowProjectId = row[1], rowCodeHash = row[2], rowExpiresAt = row[4], rowUsedAt = row[5];
+    if (rowEmail === email && rowCodeHash === codeHash && (!projectId || rowProjectId === projectId || rowProjectId === '')) {
+      if (rowUsedAt) return { success:false, error:'Koden är redan använd' };
+      if (new Date(rowExpiresAt) < new Date()) return { success:false, error:'Koden har gått ut' };
+      sh.getRange(i+1, 6).setValue(new Date().toISOString());
+      var session = createSession(email);
+      return { success:true, sessionToken: session.token, email: email };
+    }
+  }
+  return { success:false, error:'Ogiltig kod' };
+}
+
+// Admin-login mot SETTINGS (statiskt 6-siffrigt lösen)
+function handleAdminLogin(params) {
+  var username = (params.username || '').toString().trim();
+  var password = (params.password || '').toString().trim(); // 6 siffror
+
+  var expectedUser = getSetting('ADMIN_USERNAME') || 'admin';
+  var expectedPass = getSetting('ADMIN_PASSWORD_6') || '';
+  var adminEmail   = getSetting('ADMIN_EMAIL') || 'admin@byggflode.local';
+
+  if (username !== expectedUser || password !== expectedPass) {
+    return jsonResponse({ success: false, error: 'Fel användarnamn eller lösenord' }, 401);
+  }
+  var session = createSession(adminEmail);
+  return jsonResponse({ success:true, sessionToken: session.token, email: adminEmail, message:'Admin inloggad' });
+}
+
+function handleMe(sessionToken) {
+  var s = verifySession(sessionToken);
+  if (!s.valid) return jsonResponse({ success:false, error:s.error }, 401);
+  var email = s.email;
+  var adminEmail = getSetting('ADMIN_EMAIL') || 'admin@byggflode.local';
+  if (email === adminEmail) return jsonResponse({ success:true, email:email, role:'admin' });
+
+  var acc = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', email);
+  var role = acc ? (acc.role || 'customer') : 'customer';
+  return jsonResponse({ success:true, email:email, role:role });
+}
+
+/* =========================
+   KONTON / MEDLEMSKAP
+   ========================= */
 
 function createAccount(email, name, role) {
-  try {
-    var existing = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', email);
-    if (existing) {
-      return {success: false, error: 'Kontot finns redan'};
-    }
-    if (role !== 'admin' && role !== 'customer') {
-      role = 'customer';
-    }
-    var accountId = Utilities.getUuid().substring(0, 8);
-    var createdAt = new Date().toISOString();
-    var status = 'active';
-    appendToSheet(CONFIG.SHEETS.ACCOUNTS, [accountId, email, name, role, createdAt, status]);
-    Logger.log('Konto skapat: ' + email);
-    return {success: true, accountId: accountId, email: email, name: name, role: role};
-  } catch (error) {
-    Logger.log('Fel vid skapande av konto: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  var existing = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', email);
+  if (existing) return { success:false, error:'Kontot finns redan' };
+  if (role !== 'admin' && role !== 'customer') role = 'customer';
+  var id = Utilities.getUuid().substring(0,8);
+  appendToSheet(CONFIG.SHEETS.ACCOUNTS, [id, email, name, role, new Date().toISOString(), 'active']);
+  return { success:true, accountId:id };
 }
 
 function findMembership(projectId, email) {
-  var members = getSheetData(CONFIG.SHEETS.MEMBERS);
-  for (var i = 0; i < members.length; i++) {
-    if (members[i].project_id === projectId && members[i].email === email) {
-      return members[i];
+  var rows = getSheetData(CONFIG.SHEETS.MEMBERS);
+  for (var i=0;i<rows.length;i++){
+    if (String(rows[i].project_id) === String(projectId) && String(rows[i].email) === String(email)) {
+      return rows[i];
     }
   }
   return null;
 }
 
-function verifyProjectAccess(sessionToken, projectId) {
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return {hasAccess: false, error: 'Ogiltig session'};
-  }
-  var member = findMembership(projectId, session.email);
-  if (!member) {
-    return {hasAccess: false, error: 'Du har inte åtkomst till detta projekt'};
-  }
-  return {hasAccess: true, email: session.email, role: member.role};
-}
-
-// DEL 1 SLUT - Fortsätt med DEL 2
-// =============================================================================
-// BYGGFLÖDE - Apps Script Backend - DEL 2 av 4
-// KOPIERA DETTA DIREKT EFTER DEL 1
-// =============================================================================
-
-// -----------------------------------------------------------------------------
-// PROJEKTHANTERING
-// -----------------------------------------------------------------------------
+/* =========================
+   PROJEKT / STEG
+   ========================= */
 
 function createProject(name, description, ownerEmail) {
-  try {
-    var projectId = Utilities.getUuid().substring(0, 8);
-    var createdAt = new Date().toISOString();
-    Logger.log('Skapar projekt: ' + name + ' (' + projectId + ')');
-    var folders = createProjectFolderStructure(projectId, name);
-    appendToSheet(CONFIG.SHEETS.PROJECTS, [projectId, name, description, ownerEmail, createdAt, folders.projectFolderId, folders.imagesFolderId, folders.documentsFolderId, 'active', 0]);
-    appendToSheet(CONFIG.SHEETS.MEMBERS, [projectId, ownerEmail, 'admin', createdAt, true]);
-    shareProjectFolderWithMember(folders.projectFolderId, ownerEmail, true);
-    Logger.log('Projekt skapat framgångsrikt!');
-    return {success: true, projectId: projectId, folderUrl: folders.projectFolderUrl, message: 'Projekt skapat'};
-  } catch (error) {
-    Logger.log('Fel vid skapande av projekt: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  var pid = Utilities.getUuid().substring(0,8);
+  var folders = createProjectFolderStructure(pid, name);
+  appendToSheet(CONFIG.SHEETS.PROJECTS, [
+    pid, name, description, ownerEmail, new Date().toISOString(),
+    folders.projectFolderId, folders.imagesFolderId, folders.documentsFolderId,
+    'active', 0
+  ]);
+  appendToSheet(CONFIG.SHEETS.MEMBERS, [pid, ownerEmail, 'admin', new Date().toISOString(), true]);
+  // Admin/ägare får redigera – utan mail
+  silentShareFolder(folders.projectFolderId, ownerEmail, true);
+  return { success:true, projectId: pid, folderUrl: folders.projectFolderUrl };
 }
-
-function getUserProjects(userEmail) {
-  try {
-    var members = getSheetData(CONFIG.SHEETS.MEMBERS);
-    var userMemberships = [];
-    for (var i = 0; i < members.length; i++) {
-      if (members[i].email === userEmail) {
-        userMemberships.push(members[i]);
-      }
-    }
-    if (userMemberships.length === 0) {
-      return {success: true, projects: []};
-    }
-    var projects = getSheetData(CONFIG.SHEETS.PROJECTS);
-    var userProjects = [];
-    for (var i = 0; i < projects.length; i++) {
-      for (var j = 0; j < userMemberships.length; j++) {
-        if (userMemberships[j].project_id === projects[i].project_id) {
-          userProjects.push({
-            project_id: projects[i].project_id,
-            name: projects[i].name,
-            description: projects[i].description,
-            owner_email: projects[i].owner_email,
-            created_at: projects[i].created_at,
-            status: projects[i].status,
-            completion_percentage: projects[i].completion_percentage,
-            userRole: userMemberships[j].role
-          });
-          break;
-        }
-      }
-    }
-    return {success: true, projects: userProjects};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av projekt: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function getProject(projectId) {
-  try {
-    var project = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
-    if (!project) {
-      return {success: false, error: 'Projekt hittades inte'};
-    }
-    return {success: true, project: project};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av projekt: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function addProjectMember(projectId, memberEmail, role, notifyOnPost) {
-  try {
-    var project = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
-    if (!project) {
-      return {success: false, error: 'Projekt hittades inte'};
-    }
-    var existing = findMembership(projectId, memberEmail);
-    if (existing) {
-      return {success: false, error: 'Användaren är redan medlem'};
-    }
-    var account = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', memberEmail);
-    if (!account) {
-      return {success: false, error: 'Kontot hittades inte'};
-    }
-    var addedAt = new Date().toISOString();
-    appendToSheet(CONFIG.SHEETS.MEMBERS, [projectId, memberEmail, role, addedAt, notifyOnPost !== false]);
-    shareProjectFolderWithMember(project.project_folder_id, memberEmail, role === 'admin');
-    Logger.log('Medlem tillagd: ' + memberEmail + ' till projekt ' + projectId);
-    return {success: true, message: 'Medlem tillagd', member: {email: memberEmail, role: role, addedAt: addedAt}};
-  } catch (error) {
-    Logger.log('Fel vid tillägg av medlem: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-// -----------------------------------------------------------------------------
-// PROJEKT STEG-HANTERING
-// -----------------------------------------------------------------------------
 
 function createProjectStep(projectId, stepName, stepOrder) {
-  try {
-    var stepId = Utilities.getUuid().substring(0, 8);
-    var createdAt = new Date().toISOString();
-    appendToSheet(CONFIG.SHEETS.PROJECT_STEPS, [stepId, projectId, stepName, stepOrder, 'pending', '', createdAt]);
-    Logger.log('Steg skapat: ' + stepName);
-    return {success: true, stepId: stepId, stepName: stepName};
-  } catch (error) {
-    Logger.log('Fel vid skapande av steg: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  var sid = Utilities.getUuid().substring(0,8);
+  appendToSheet(CONFIG.SHEETS.PROJECT_STEPS, [sid, projectId, stepName, stepOrder, 'pending', '', new Date().toISOString()]);
+  return { success:true, stepId:sid };
 }
 
 function createProjectWithSteps(name, description, ownerEmail, steps) {
-  try {
-    var project = createProject(name, description, ownerEmail);
-    if (!project.success) {
-      return project;
-    }
-    var createdSteps = [];
-    for (var i = 0; i < steps.length; i++) {
-      var step = createProjectStep(project.projectId, steps[i], i + 1);
-      if (step.success) {
-        createdSteps.push(step);
-      }
-    }
-    return {success: true, projectId: project.projectId, folderUrl: project.folderUrl, steps: createdSteps, message: 'Projekt skapat med ' + createdSteps.length + ' steg'};
-  } catch (error) {
-    Logger.log('Fel vid skapande av projekt med steg: ' + error.toString());
-    return {success: false, error: error.toString()};
+  var p = createProject(name, description, ownerEmail);
+  if (!p.success) return p;
+  var created = [];
+  for (var i=0;i<steps.length;i++){
+    var s = createProjectStep(p.projectId, steps[i], i+1);
+    if (s.success) created.push(s);
   }
+  return { success:true, projectId:p.projectId, steps:created, folderUrl:p.folderUrl };
 }
 
-function getProjectSteps(projectId) {
-  try {
-    var steps = getSheetData(CONFIG.SHEETS.PROJECT_STEPS);
-    var projectSteps = [];
-    for (var i = 0; i < steps.length; i++) {
-      if (steps[i].project_id === projectId) {
-        projectSteps.push(steps[i]);
-      }
-    }
-    projectSteps.sort(function(a, b) {
-      return a.step_order - b.step_order;
-    });
-    return {success: true, steps: projectSteps, count: projectSteps.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av steg: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
+function getUserProjects(userEmail) {
+  var members = getSheetData(CONFIG.SHEETS.MEMBERS).filter(function(m){ return m.email === userEmail; });
+  if (members.length===0) return { success:true, projects:[] };
 
-function completeProjectStep(stepId) {
-  try {
-    var completedAt = new Date().toISOString();
-    var updated = updateSheetRow(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId, {status: 'completed', completed_at: completedAt});
-    if (updated) {
-      var step = findRowByColumn(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId);
-      updateProjectCompletion(step.project_id);
-      return {success: true, message: 'Steg markerat som klart'};
-    }
-    return {success: false, error: 'Steg hittades inte'};
-  } catch (error) {
-    Logger.log('Fel vid markering av steg: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function updateProjectCompletion(projectId) {
-  try {
-    var steps = getProjectSteps(projectId);
-    if (steps.steps.length === 0) {
-      return;
-    }
-    var completedSteps = 0;
-    for (var i = 0; i < steps.steps.length; i++) {
-      if (steps.steps[i].status === 'completed') {
-        completedSteps++;
-      }
-    }
-    var percentage = Math.round((completedSteps / steps.steps.length) * 100);
-    var status = percentage === 100 ? 'completed' : 'in_progress';
-    updateSheetRow(CONFIG.SHEETS.PROJECTS, 'project_id', projectId, {completion_percentage: percentage, status: status});
-    Logger.log('Projekt uppdaterat: ' + percentage + '% klart');
-  } catch (error) {
-    Logger.log('Fel vid uppdatering av projektstatus: ' + error.toString());
-  }
-}
-
-// -----------------------------------------------------------------------------
-// POSTS & BILDER
-// -----------------------------------------------------------------------------
-
-function createPostForStep(projectId, stepId, authorEmail, text, imageFileIds) {
-  try {
-    var postId = Utilities.getUuid().substring(0, 8);
-    var createdAt = new Date().toISOString();
-    var imageFileIdsString = '';
-    if (imageFileIds && imageFileIds.length > 0) {
-      imageFileIdsString = imageFileIds.join(',');
-    }
-    appendToSheet(CONFIG.SHEETS.POSTS, [postId, projectId, authorEmail, text, imageFileIdsString, createdAt, stepId]);
-    Logger.log('Post skapad för steg: ' + stepId);
-    return {success: true, postId: postId, message: 'Inlägg skapat'};
-  } catch (error) {
-    Logger.log('Fel vid skapande av post: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function getStepPosts(stepId) {
-  try {
-    var posts = getSheetData(CONFIG.SHEETS.POSTS);
-    var stepPosts = [];
-    for (var i = 0; i < posts.length; i++) {
-      if (posts[i].step_id === stepId) {
-        var post = posts[i];
-        if (post.image_file_ids) {
-          var imageIds = post.image_file_ids.split(',');
-          var images = [];
-          for (var j = 0; j < imageIds.length; j++) {
-            if (imageIds[j]) {
-              var fileId = imageIds[j].trim();
-              images.push({
-                fileId: fileId,
-                thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w400',
-                fullUrl: 'https://drive.google.com/file/d/' + fileId + '/view'
-              });
-            }
-          }
-          post.images = images;
-        } else {
-          post.images = [];
-        }
-        stepPosts.push(post);
-      }
-    }
-    stepPosts.sort(function(a, b) {
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
-    return {success: true, posts: stepPosts, count: stepPosts.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av posts för steg: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-function getProjectPostsWithImages(projectId) {
-  try {
-    var posts = getSheetData(CONFIG.SHEETS.POSTS);
-    var projectPosts = [];
-    for (var i = 0; i < posts.length; i++) {
-      if (posts[i].project_id === projectId) {
-        var post = posts[i];
-        if (post.image_file_ids) {
-          var imageIds = post.image_file_ids.split(',');
-          var images = [];
-          for (var j = 0; j < imageIds.length; j++) {
-            if (imageIds[j]) {
-              var fileId = imageIds[j].trim();
-              images.push({
-                fileId: fileId,
-                thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + fileId,
-                fullUrl: 'https://drive.google.com/file/d/' + fileId + '/view'
-              });
-            }
-          }
-          post.images = images;
-        } else {
-          post.images = [];
-        }
-        projectPosts.push(post);
-      }
-    }
-    projectPosts.sort(function(a, b) {
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
-    return {success: true, posts: projectPosts, count: projectPosts.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av posts: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
-}
-
-// -----------------------------------------------------------------------------
-// REACTIONS & KOMMENTARER
-// -----------------------------------------------------------------------------
-
-function addReaction(postId, userEmail, reactionType) {
-  try {
-    var post = findRowByColumn(CONFIG.SHEETS.POSTS, 'post_id', postId);
-    if (!post) {
-      return {success: false, error: 'Inlägg hittades inte'};
-    }
-    var reactions = getSheetData(CONFIG.SHEETS.REACTIONS);
-    var existingReaction = null;
-    for (var i = 0; i < reactions.length; i++) {
-      if (reactions[i].post_id === postId && reactions[i].user_email === userEmail && !reactions[i].deleted_at) {
-        existingReaction = reactions[i];
+  var projects = getSheetData(CONFIG.SHEETS.PROJECTS);
+  var list = [];
+  for (var i=0;i<projects.length;i++){
+    for (var j=0;j<members.length;j++){
+      if (members[j].project_id === projects[i].project_id) {
+        list.push({
+          project_id: projects[i].project_id,
+          name: projects[i].name,
+          description: projects[i].description,
+          owner_email: projects[i].owner_email,
+          created_at: projects[i].created_at,
+          status: projects[i].status,
+          completion_percentage: projects[i].completion_percentage,
+          userRole: members[j].role
+        });
         break;
       }
     }
-    if (existingReaction) {
-      return {success: false, error: 'Du har redan reagerat på detta inlägg'};
-    }
-    var createdAt = new Date().toISOString();
-    appendToSheet(CONFIG.SHEETS.REACTIONS, [postId, userEmail, reactionType, createdAt, '']);
-    Logger.log('Reaction tillagd: ' + reactionType + ' av ' + userEmail);
-    return {success: true, message: 'Reaction tillagd', type: reactionType};
-  } catch (error) {
-    Logger.log('Fel vid tillägg av reaction: ' + error.toString());
-    return {success: false, error: error.toString()};
   }
+  return { success:true, projects:list };
 }
 
-function removeReaction(postId, userEmail) {
-  try {
-    var reactionsSheet = getSheet(CONFIG.SHEETS.REACTIONS);
-    var data = reactionsSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === postId && data[i][1] === userEmail && !data[i][4]) {
-        reactionsSheet.getRange(i + 1, 5).setValue(new Date().toISOString());
-        Logger.log('Reaction borttagen från post: ' + postId);
-        return {success: true, message: 'Reaction borttagen'};
-      }
-    }
-    return {success: false, error: 'Ingen reaction hittades'};
-  } catch (error) {
-    Logger.log('Fel vid borttagning av reaction: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+function getProjectSteps(projectId) {
+  var steps = getSheetData(CONFIG.SHEETS.PROJECT_STEPS)
+    .filter(function(s){ return s.project_id === projectId; })
+    .sort(function(a,b){ return Number(a.step_order) - Number(b.step_order); });
+  return { success:true, steps:steps };
 }
 
-function getPostReactions(postId) {
-  try {
-    var reactions = getSheetData(CONFIG.SHEETS.REACTIONS);
-    var postReactions = [];
-    for (var i = 0; i < reactions.length; i++) {
-      if (reactions[i].post_id === postId && !reactions[i].deleted_at) {
-        postReactions.push({
-          userEmail: reactions[i].user_email,
-          type: reactions[i].type,
-          createdAt: reactions[i].created_at
+function completeProjectStep(stepId) {
+  var ok = updateSheetRow(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId,
+      { status:'completed', completed_at: new Date().toISOString() });
+  if (!ok) return { success:false, error:'Steg hittades inte' };
+
+  // uppdatera projektets completion %
+  var step = findRowByColumn(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId);
+  if (step) updateProjectCompletion(step.project_id);
+
+  return { success:true };
+}
+
+function updateProjectCompletion(projectId) {
+  var stepsResp = getProjectSteps(projectId);
+  var steps = stepsResp.steps || [];
+  if (steps.length === 0) return;
+  var completed = steps.filter(function(s){ return s.status === 'completed'; }).length;
+  var pct = Math.round((completed/steps.length)*100);
+  var status = pct === 100 ? 'completed' : 'in_progress';
+  updateSheetRow(CONFIG.SHEETS.PROJECTS, 'project_id', projectId, { completion_percentage:pct, status:status });
+}
+
+/* =========================
+   INLÄGG / BILDER / KOMMENTAR / REAKTIONER
+   ========================= */
+
+function createPostForStep(projectId, stepId, authorEmail, text, imageFileIds) {
+  var pid = Utilities.getUuid().substring(0,8);
+  var createdAt = new Date().toISOString();
+  var imageIdsString = (imageFileIds && imageFileIds.length) ? imageFileIds.join(',') : '';
+  appendToSheet(CONFIG.SHEETS.POSTS, [pid, projectId, authorEmail, text, imageIdsString, createdAt, 'active', '', stepId]);
+  return { success:true, postId:pid };
+}
+
+function getStepPosts(stepId) {
+  var posts = getSheetData(CONFIG.SHEETS.POSTS)
+    .filter(function(p){ return p.step_id === stepId; })
+    .sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+
+  posts.forEach(function(p){
+    p.images = [];
+    if (p.image_file_ids) {
+      (String(p.image_file_ids).split(',')||[]).forEach(function(fid){
+        var id = String(fid).trim();
+        if (id) p.images.push({
+          fileId: id,
+          directUrl: makeDirectUrl(id),
+          thumbnailUrl: makeThumbUrl(id, 800),
+          fullUrl: 'https://drive.google.com/file/d/' + id + '/view'
         });
-      }
+      });
     }
-    var reactionCounts = {};
-    for (var i = 0; i < postReactions.length; i++) {
-      var type = postReactions[i].type;
-      reactionCounts[type] = (reactionCounts[type] || 0) + 1;
+  });
+
+  return { success:true, posts:posts, count:posts.length };
+}
+
+function getProjectPostsWithImages(projectId) {
+  var posts = getSheetData(CONFIG.SHEETS.POSTS)
+    .filter(function(p){ return p.project_id === projectId; })
+    .sort(function(a,b){ return new Date(b.created_at) - new Date(a.created_at); });
+
+  posts.forEach(function(p){
+    p.images = [];
+    if (p.image_file_ids) {
+      (String(p.image_file_ids).split(',')||[]).forEach(function(fid){
+        var id = String(fid).trim();
+        if (id) p.images.push({
+          fileId: id,
+          directUrl: makeDirectUrl(id),
+          thumbnailUrl: makeThumbUrl(id, 800),
+          fullUrl: 'https://drive.google.com/file/d/' + id + '/view'
+        });
+      });
     }
-    return {success: true, reactions: postReactions, counts: reactionCounts, total: postReactions.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av reactions: ' + error.toString());
-    return {success: false, error: error.toString()};
+  });
+
+  return { success:true, posts:posts, count:posts.length };
+}
+
+function addReaction(postId, userEmail, reactionType) {
+  var ex = getSheetData(CONFIG.SHEETS.REACTIONS).find(function(r){
+    return r.post_id === postId && r.user_email === userEmail && !r.deleted_at;
+  });
+  if (ex) return { success:false, error:'Du har redan reagerat' };
+  appendToSheet(CONFIG.SHEETS.REACTIONS, [postId, userEmail, (reactionType||'like'), new Date().toISOString(), '' ]);
+  return { success:true };
+}
+function removeReaction(postId, userEmail) {
+  var sh = getSheet(CONFIG.SHEETS.REACTIONS);
+  var data = sh.getDataRange().getValues();
+  for (var i=1;i<data.length;i++){
+    if (data[i][0]===postId && data[i][1]===userEmail && !data[i][4]) {
+      sh.getRange(i+1, 5).setValue(new Date().toISOString());
+      return { success:true };
+    }
   }
+  return { success:false, error:'Ingen reaction att ta bort' };
+}
+function getPostReactions(postId) {
+  var rows = getSheetData(CONFIG.SHEETS.REACTIONS).filter(function(r){
+    return r.post_id === postId && !r.deleted_at;
+  });
+  var counts = {};
+  rows.forEach(function(r){ counts[r.type] = (counts[r.type]||0) + 1; });
+  return { success:true, reactions: rows.map(function(r){ return { userEmail:r.user_email, type:r.type, createdAt:r.created_at }; }), counts:counts, total: rows.length };
 }
 
 function addComment(postId, userEmail, text) {
-  try {
-    var post = findRowByColumn(CONFIG.SHEETS.POSTS, 'post_id', postId);
-    if (!post) {
-      return {success: false, error: 'Inlägg hittades inte'};
-    }
-    if (!text || text.trim() === '') {
-      return {success: false, error: 'Kommentar kan inte vara tom'};
-    }
-    var commentId = Utilities.getUuid().substring(0, 8);
-    var createdAt = new Date().toISOString();
-    appendToSheet(CONFIG.SHEETS.COMMENTS, [commentId, postId, userEmail, text, createdAt]);
-    Logger.log('Kommentar tillagd: ' + commentId);
-    return {success: true, commentId: commentId, message: 'Kommentar tillagd'};
-  } catch (error) {
-    Logger.log('Fel vid tillägg av kommentar: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  if (!String(text||'').trim()) return { success:false, error:'Tom kommentar' };
+  var cid = Utilities.getUuid().substring(0,8);
+  appendToSheet(CONFIG.SHEETS.COMMENTS, [cid, postId, userEmail, text, new Date().toISOString()]);
+  return { success:true, commentId:cid };
 }
-
 function getPostComments(postId) {
-  try {
-    var comments = getSheetData(CONFIG.SHEETS.COMMENTS);
-    var postComments = [];
-    for (var i = 0; i < comments.length; i++) {
-      if (comments[i].post_id === postId) {
-        postComments.push({
-          commentId: comments[i].comment_id,
-          userEmail: comments[i].user_email,
-          text: comments[i].text,
-          createdAt: comments[i].created_at
-        });
-      }
-    }
-    postComments.sort(function(a, b) {
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
-    return {success: true, comments: postComments, count: postComments.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av kommentarer: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  var rows = getSheetData(CONFIG.SHEETS.COMMENTS).filter(function(c){ return c.post_id === postId; });
+  rows.sort(function(a,b){ return new Date(a.created_at) - new Date(b.created_at); });
+  return { success:true, comments:rows, count:rows.length };
 }
 
-// -----------------------------------------------------------------------------
-// KONTOHANTERING
-// -----------------------------------------------------------------------------
+/* =========================
+   AGGREGAT: STEG MED RÄKNARE & PROJEKTFEED
+   ========================= */
 
-function getAccounts() {
-  try {
-    var accounts = getSheetData(CONFIG.SHEETS.ACCOUNTS);
-    var safeAccounts = [];
-    for (var i = 0; i < accounts.length; i++) {
-      safeAccounts.push({
-        account_id: accounts[i].account_id,
-        email: accounts[i].email,
-        name: accounts[i].name,
-        role: accounts[i].role,
-        created_at: accounts[i].created_at,
-        status: accounts[i].status
-      });
+function getStepsWithCounts(projectId) {
+  var steps = getProjectSteps(projectId).steps || [];
+  var posts = getProjectPostsWithImages(projectId).posts || [];
+
+  // count per step
+  var byStep = {};
+  steps.forEach(function(s){
+    byStep[s.step_id] = { post:0, images:0 };
+  });
+
+  posts.forEach(function(p){
+    var sid = p.step_id;
+    if (sid && byStep[sid]) {
+      byStep[sid].post += 1;
+      byStep[sid].images += (p.images ? p.images.length : 0);
     }
-    return {success: true, accounts: safeAccounts, count: safeAccounts.length};
-  } catch (error) {
-    Logger.log('Fel vid hämtning av konton: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+  });
+
+  steps.forEach(function(s){
+    s.post_count = (byStep[s.step_id] && byStep[s.step_id].post) || 0;
+    s.image_count = (byStep[s.step_id] && byStep[s.step_id].images) || 0;
+  });
+
+  return { success:true, steps:steps };
 }
 
-function updateAccount(email, name, role) {
-  try {
-    var updates = {};
-    if (name) updates.name = name;
-    if (role) updates.role = role;
-    var updated = updateSheetRow(CONFIG.SHEETS.ACCOUNTS, 'email', email, updates);
-    if (updated) {
-      return {success: true, message: 'Konto uppdaterat'};
-    } else {
-      return {success: false, error: 'Konto hittades inte'};
-    }
-  } catch (error) {
-    Logger.log('Fel vid uppdatering av konto: ' + error.toString());
-    return {success: false, error: error.toString()};
-  }
+function getProjectFeed(projectId) {
+  var posts = getProjectPostsWithImages(projectId).posts || [];
+  var stepsMap = {};
+  (getProjectSteps(projectId).steps || []).forEach(function(s){ stepsMap[s.step_id] = s.step_name; });
+
+  // kommentarsräknare per post
+  var allComments = getSheetData(CONFIG.SHEETS.COMMENTS);
+  var commCount = {};
+  allComments.forEach(function(c){
+    var pid = c.post_id;
+    commCount[pid] = (commCount[pid]||0)+1;
+  });
+
+  posts = posts.map(function(p){
+    p.step_name = stepsMap[p.step_id] || '';
+    p.comments_count = commCount[p.post_id] || 0;
+    return p;
+  });
+
+  // sort redan gjord i getProjectPostsWithImages
+  return { success:true, feed:posts };
 }
 
-// DEL 2 SLUT - Fortsätt med DEL 3
-// =============================================================================
-// BYGGFLÖDE - Apps Script Backend - DEL 3 av 4
-// KOPIERA DETTA DIREKT EFTER DEL 2
-// =============================================================================
+/* =========================
+   FIL-UPPLADDNING
+   ========================= */
 
-// -----------------------------------------------------------------------------
-// API ENDPOINTS
-// -----------------------------------------------------------------------------
+function uploadImageToProject(projectId, uploaderEmail, base64, filename, mimeType) {
+  var project = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
+  if (!project) return { success:false, error:'Projekt saknas' };
+
+  var blob = Utilities.newBlob(Utilities.base64Decode(base64), mimeType || 'application/octet-stream', filename || ('bild_'+Date.now()));
+  var folder = DriveApp.getFolderById(project.images_folder_id);
+  var file = folder.createFile(blob);
+
+  appendToSheet(CONFIG.SHEETS.IMAGE_METADATA, [
+    file.getId(), projectId, uploaderEmail, new Date().toISOString(),
+    mimeType || '', file.getName(), file.getSize()
+  ]);
+
+  return { success:true, fileId:file.getId(), directUrl: makeDirectUrl(file.getId()), thumbUrl: makeThumbUrl(file.getId(), 800) };
+}
+
+/* =========================
+   HTTP API
+   ========================= */
+
+function jsonResponse(data, statusCode) {
+  // Apps Script Web Apps ignorerar status-koden i ContentService, men vi behåller signaturen.
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
 
 function doGet(e) {
   try {
     var path = e.parameter.path || '';
-    var sessionToken = e.parameter.session || '';
-    Logger.log('GET request: ' + path);
-    
-    if (path === 'ping') {
-      return jsonResponse({success: true, message: 'Byggflöde API v2.0 with Admin'});
+    if (path === 'ping') return jsonResponse({ success:true, message:'pong' });
+
+    if (path === 'me') {
+      var sessionToken = e.parameter.session || '';
+      return handleMe(sessionToken);
     }
-    
-    var session = verifySession(sessionToken);
-    if (!session.valid) {
-      return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-    }
-    
+
+    var session = verifySession(e.parameter.session || '');
+    if (!session.valid) return jsonResponse({ success:false, error:'Ogiltig session' });
+
     if (path === 'projects') {
-      return handleGetProjects(session.email);
+      return jsonResponse(getUserProjects(session.email));
     }
-    if (path === 'project') {
+    if (path === 'project/steps-with-counts') {
       var projectId = e.parameter.projectId;
-      return handleGetProject(sessionToken, projectId);
+      if (!projectId) return jsonResponse({ success:false, error:'projectId saknas' }, 400);
+      // Åtkomstkontroll
+      var mem = findMembership(projectId, session.email);
+      var adminEmail = getSetting('ADMIN_EMAIL') || 'admin@byggflode.local';
+      if (!mem && session.email !== adminEmail) return jsonResponse({ success:false, error:'Ingen åtkomst' }, 403);
+      return jsonResponse(getStepsWithCounts(projectId));
     }
-    if (path === 'project/steps') {
-      var projectId = e.parameter.projectId;
-      return handleGetProjectSteps(sessionToken, projectId);
-    }
-    if (path === 'step/posts') {
-      var stepId = e.parameter.stepId;
-      return handleGetStepPosts(sessionToken, stepId);
-    }
-    if (path === 'posts') {
-      var projectId = e.parameter.projectId;
-      return handleGetPosts(sessionToken, projectId);
-    }
-    if (path === 'post/reactions') {
-      var postId = e.parameter.postId;
-      return handleGetReactions(postId);
+    if (path === 'project/feed') {
+      var projectId2 = e.parameter.projectId;
+      if (!projectId2) return jsonResponse({ success:false, error:'projectId saknas' }, 400);
+      var mem2 = findMembership(projectId2, session.email);
+      var adminEmail2 = getSetting('ADMIN_EMAIL') || 'admin@byggflode.local';
+      if (!mem2 && session.email !== adminEmail2) return jsonResponse({ success:false, error:'Ingen åtkomst' }, 403);
+      return jsonResponse(getProjectFeed(projectId2));
     }
     if (path === 'post/comments') {
       var postId = e.parameter.postId;
-      return handleGetComments(postId);
+      if (!postId) return jsonResponse({ success:false, error:'postId saknas' }, 400);
+      return jsonResponse(getPostComments(postId));
     }
-    if (path === 'accounts') {
-      return handleGetAccounts(sessionToken);
+    if (path === 'post/reactions') {
+      var postId2 = e.parameter.postId;
+      if (!postId2) return jsonResponse({ success:false, error:'postId saknas' }, 400);
+      return jsonResponse(getPostReactions(postId2));
     }
-    
-    return jsonResponse({success: false, error: 'Okänd endpoint'}, 404);
-  } catch (error) {
-    Logger.log('API Error: ' + error.toString());
-    return jsonResponse({success: false, error: error.toString()}, 500);
+
+    return jsonResponse({ success:false, error:'Okänd GET endpoint' }, 404);
+  } catch (err) {
+    Logger.log('doGet error: ' + err);
+    return jsonResponse({ success:false, error:String(err) }, 500);
   }
 }
 
 function doPost(e) {
   try {
-    var params;
-    if (e.postData.type === 'application/json') {
-      params = JSON.parse(e.postData.contents);
-    } else {
-      params = e.parameter;
-    }
+    var params = (e.postData && e.postData.type === 'application/json')
+      ? JSON.parse(e.postData.contents) : (e.parameter || {});
     var path = params.path || '';
-    Logger.log('POST request: ' + path);
-    
-    if (path === 'auth/request-otp') {
-      return handleRequestOTP(params);
-    }
-    if (path === 'auth/verify-otp') {
-      return handleVerifyOTP(params);
-    }
+
+    // Öppna endpoints (ingen session)
+    if (path === 'auth/request-otp') return jsonResponse(requestOTP(params.email, params.projectId||''));
+    if (path === 'auth/verify-otp') return jsonResponse(verifyOTP(params.email, params.code, params.projectId||''));
+    if (path === 'auth/admin-login') return handleAdminLogin(params);
+
+    // session krävs
+    var session = verifySession(params.session || '');
+    if (!session.valid) return jsonResponse({ success:false, error:'Ogiltig session' }, 401);
+
+    // Auth
     if (path === 'auth/logout') {
-      return handleLogout(params);
+      // Enkel logout = ta bort sessionrad
+      var sh = getSheet(CONFIG.SHEETS.SESSIONS);
+      var data = sh.getDataRange().getValues();
+      for (var i=1;i<data.length;i++){
+        if (data[i][0] === params.session) { sh.deleteRow(i+1); break; }
+      }
+      return jsonResponse({ success:true, message:'Utloggad' });
     }
-    
-    var sessionToken = params.session || '';
-    var session = verifySession(sessionToken);
-    if (!session.valid) {
-      return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-    }
-    
+
+    // Projekt
     if (path === 'project/create') {
-      return handleCreateProjectWithSteps(session.email, params);
+      // Endast admin eller projektägare (admin räcker)
+      var me = handleMe(params.session); // ContentService-output
+      var meObj = JSON.parse(me.getContent());
+      if (meObj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+      var steps = (params.steps||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+      var resp = createProjectWithSteps(params.name, (params.description||''), session.email, steps);
+      return jsonResponse(resp);
     }
+
     if (path === 'project/add-member') {
-      return handleAddMember(sessionToken, params);
+      var projectId = params.projectId;
+      var memberEmail = params.memberEmail;
+      var role = params.role || 'customer';
+      var notifyOnPost = (String(params.notifyOnPost) !== 'false');
+
+      if (!projectId || !memberEmail) return jsonResponse({ success:false, error:'ProjectId och email krävs' }, 400);
+
+      // Endast admin (enkel regel)
+      var me2 = handleMe(params.session);
+      var me2Obj = JSON.parse(me2.getContent());
+      if (me2Obj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+
+      var project = findRowByColumn(CONFIG.SHEETS.PROJECTS, 'project_id', projectId);
+      if (!project) return jsonResponse({ success:false, error:'Projekt saknas' }, 404);
+
+      var memberExist = findMembership(projectId, memberEmail);
+      if (memberExist) return jsonResponse({ success:false, error:'Användaren är redan medlem' }, 400);
+
+      var acc = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', memberEmail);
+      if (!acc) return jsonResponse({ success:false, error:'Kontot saknas, skapa först' }, 400);
+
+      appendToSheet(CONFIG.SHEETS.MEMBERS, [projectId, memberEmail, role, new Date().toISOString(), notifyOnPost]);
+      // tyst delning
+      try { silentShareFolder(project.project_folder_id, memberEmail, role === 'admin'); } catch(e){}
+
+      return jsonResponse({ success:true, message:'Medlem tillagd' });
     }
-    if (path === 'step/create') {
-      return handleCreateStep(sessionToken, params);
-    }
+
+    // Steg
     if (path === 'step/complete') {
-      return handleCompleteStep(sessionToken, params);
+      var stepId = params.stepId;
+      if (!stepId) return jsonResponse({ success:false, error:'stepId saknas' }, 400);
+      // Endast admin
+      var me3 = handleMe(params.session); var me3Obj = JSON.parse(me3.getContent());
+      if (me3Obj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+      return jsonResponse(completeProjectStep(stepId));
     }
+
+    // Inlägg
     if (path === 'post/create') {
-      return handleCreatePostForStep(sessionToken, params);
+      var projectId2 = params.projectId, stepId2 = params.stepId, text = params.text || '';
+      if (!projectId2 || !stepId2) return jsonResponse({ success:false, error:'ProjectId/StepId saknas' }, 400);
+      var me4 = handleMe(params.session); var me4Obj = JSON.parse(me4.getContent());
+      if (me4Obj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+      var imageIds = (params.imageFileIds||'').split(',').map(function(x){return x.trim();}).filter(Boolean);
+      return jsonResponse(createPostForStep(projectId2, stepId2, session.email, text, imageIds));
     }
+
+    if (path === 'post/comment/add') {
+      var postId3 = params.postId, text2 = params.text || '';
+      if (!postId3) return jsonResponse({ success:false, error:'postId saknas' }, 400);
+      return jsonResponse(addComment(postId3, session.email, text2));
+    }
+
     if (path === 'post/reaction/add') {
-      return handleAddReaction(sessionToken, params);
+      var postId4 = params.postId, t = params.type || 'like';
+      if (!postId4) return jsonResponse({ success:false, error:'postId saknas' }, 400);
+      return jsonResponse(addReaction(postId4, session.email, t));
     }
     if (path === 'post/reaction/remove') {
-      return handleRemoveReaction(sessionToken, params);
+      var postId5 = params.postId;
+      if (!postId5) return jsonResponse({ success:false, error:'postId saknas' }, 400);
+      return jsonResponse(removeReaction(postId5, session.email));
     }
-    if (path === 'post/comment/add') {
-      return handleAddComment(sessionToken, params);
-    }
+
+    // Konto
     if (path === 'account/create') {
-      return handleCreateAccount(sessionToken, params);
+      var me5 = handleMe(params.session); var me5Obj = JSON.parse(me5.getContent());
+      if (me5Obj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+      return jsonResponse(createAccount(params.email, params.name, params.role||'customer'));
     }
-    if (path === 'account/update') {
-      return handleUpdateAccount(sessionToken, params);
+
+    // Uppladdning
+    if (path === 'file/upload') {
+      var projectId3 = params.projectId;
+      var base64 = params.dataBase64;
+      var filename = params.filename || ('bild_'+Date.now()+'.jpg');
+      var mimeType = params.mimeType || 'image/jpeg';
+      if (!projectId3 || !base64) return jsonResponse({ success:false, error:'projectId/dataBase64 saknas' }, 400);
+      // Endast admin (skapar inlägg/laddar upp)
+      var me6 = handleMe(params.session); var me6Obj = JSON.parse(me6.getContent());
+      if (me6Obj.role !== 'admin') return jsonResponse({ success:false, error:'Endast admin' }, 403);
+      return jsonResponse(uploadImageToProject(projectId3, session.email, base64, filename, mimeType));
     }
-    
-    return jsonResponse({success: false, error: 'Okänd endpoint'}, 404);
-  } catch (error) {
-    Logger.log('API Error: ' + error.toString());
-    return jsonResponse({success: false, error: error.toString()}, 500);
+
+    return jsonResponse({ success:false, error:'Okänd POST endpoint' }, 404);
+  } catch (err) {
+    Logger.log('doPost error: ' + err);
+    return jsonResponse({ success:false, error:String(err) }, 500);
   }
 }
 
-function jsonResponse(data, statusCode) {
-  statusCode = statusCode || 200;
-  var output = JSON.stringify(data);
-  return ContentService.createTextOutput(output).setMimeType(ContentService.MimeType.JSON);
-}
-
-// -----------------------------------------------------------------------------
-// API HANDLERS
-// -----------------------------------------------------------------------------
-
-function handleRequestOTP(params) {
-  var email = params.email;
-  var projectId = params.projectId || '';
-  if (!email) {
-    return jsonResponse({success: false, error: 'Email saknas'}, 400);
-  }
-  var result = requestOTP(email, projectId);
-  return jsonResponse(result);
-}
-
-function handleVerifyOTP(params) {
-  var email = params.email;
-  var code = params.code;
-  var projectId = params.projectId || '';
-  if (!email || !code) {
-    return jsonResponse({success: false, error: 'Email eller kod saknas'}, 400);
-  }
-  var result = verifyOTP(email, code, projectId);
-  return jsonResponse(result);
-}
-
-function handleLogout(params) {
-  var sessionToken = params.session;
-  if (!sessionToken) {
-    return jsonResponse({success: false, error: 'Session token saknas'}, 400);
-  }
-  var result = logout(sessionToken);
-  return jsonResponse(result);
-}
-
-function handleGetProjects(email) {
-  var result = getUserProjects(email);
-  return jsonResponse(result);
-}
-
-function handleGetProject(sessionToken, projectId) {
-  if (!projectId) {
-    return jsonResponse({success: false, error: 'Project ID saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess) {
-    return jsonResponse({success: false, error: access.error}, 403);
-  }
-  var result = getProject(projectId);
-  return jsonResponse(result);
-}
-
-function handleCreateProjectWithSteps(email, params) {
-  var name = params.name;
-  var description = params.description || '';
-  var stepsString = params.steps || '';
-  if (!name) {
-    return jsonResponse({success: false, error: 'Projektnamn saknas'}, 400);
-  }
-  var steps = [];
-  if (stepsString) {
-    steps = stepsString.split(',');
-  }
-  var result = createProjectWithSteps(name, description, email, steps);
-  return jsonResponse(result);
-}
-
-function handleAddMember(sessionToken, params) {
-  var projectId = params.projectId;
-  var memberEmail = params.memberEmail;
-  var role = params.role || 'customer';
-  var notifyOnPost = params.notifyOnPost !== 'false';
-  if (!projectId || !memberEmail) {
-    return jsonResponse({success: false, error: 'Project ID eller email saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess) {
-    return jsonResponse({success: false, error: access.error}, 403);
-  }
-  if (access.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan lägga till medlemmar'}, 403);
-  }
-  var result = addProjectMember(projectId, memberEmail, role, notifyOnPost);
-  return jsonResponse(result);
-}
-
-function handleGetProjectSteps(sessionToken, projectId) {
-  if (!projectId) {
-    return jsonResponse({success: false, error: 'Project ID saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess) {
-    return jsonResponse({success: false, error: access.error}, 403);
-  }
-  var result = getProjectSteps(projectId);
-  return jsonResponse(result);
-}
-
-function handleCreateStep(sessionToken, params) {
-  var projectId = params.projectId;
-  var stepName = params.stepName;
-  var stepOrder = parseInt(params.stepOrder) || 999;
-  if (!projectId || !stepName) {
-    return jsonResponse({success: false, error: 'Project ID eller steg namn saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess || access.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan skapa steg'}, 403);
-  }
-  var result = createProjectStep(projectId, stepName, stepOrder);
-  return jsonResponse(result);
-}
-
-function handleCompleteStep(sessionToken, params) {
-  var stepId = params.stepId;
-  if (!stepId) {
-    return jsonResponse({success: false, error: 'Step ID saknas'}, 400);
-  }
-  var step = findRowByColumn(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId);
-  if (!step) {
-    return jsonResponse({success: false, error: 'Steg hittades inte'}, 404);
-  }
-  var access = verifyProjectAccess(sessionToken, step.project_id);
-  if (!access.hasAccess || access.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan markera steg som klara'}, 403);
-  }
-  var result = completeProjectStep(stepId);
-  return jsonResponse(result);
-}
-
-function handleCreatePostForStep(sessionToken, params) {
-  var projectId = params.projectId;
-  var stepId = params.stepId;
-  var text = params.text || '';
-  var imageFileIds = params.imageFileIds || '';
-  if (!projectId || !stepId) {
-    return jsonResponse({success: false, error: 'Project ID eller Step ID saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess || access.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan skapa inlägg'}, 403);
-  }
-  var imageIds = [];
-  if (imageFileIds) {
-    imageIds = imageFileIds.split(',');
-  }
-  var result = createPostForStep(projectId, stepId, access.email, text, imageIds);
-  return jsonResponse(result);
-}
-
-function handleGetStepPosts(sessionToken, stepId) {
-  if (!stepId) {
-    return jsonResponse({success: false, error: 'Step ID saknas'}, 400);
-  }
-  var step = findRowByColumn(CONFIG.SHEETS.PROJECT_STEPS, 'step_id', stepId);
-  if (!step) {
-    return jsonResponse({success: false, error: 'Steg hittades inte'}, 404);
-  }
-  var access = verifyProjectAccess(sessionToken, step.project_id);
-  if (!access.hasAccess) {
-    return jsonResponse({success: false, error: access.error}, 403);
-  }
-  var result = getStepPosts(stepId);
-  return jsonResponse(result);
-}
-
-function handleGetPosts(sessionToken, projectId) {
-  if (!projectId) {
-    return jsonResponse({success: false, error: 'Project ID saknas'}, 400);
-  }
-  var access = verifyProjectAccess(sessionToken, projectId);
-  if (!access.hasAccess) {
-    return jsonResponse({success: false, error: access.error}, 403);
-  }
-  var result = getProjectPostsWithImages(projectId);
-  return jsonResponse(result);
-}
-
-function handleAddReaction(sessionToken, params) {
-  var postId = params.postId;
-  var reactionType = params.type || 'like';
-  if (!postId) {
-    return jsonResponse({success: false, error: 'Post ID saknas'}, 400);
-  }
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var result = addReaction(postId, session.email, reactionType);
-  return jsonResponse(result);
-}
-
-function handleRemoveReaction(sessionToken, params) {
-  var postId = params.postId;
-  if (!postId) {
-    return jsonResponse({success: false, error: 'Post ID saknas'}, 400);
-  }
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var result = removeReaction(postId, session.email);
-  return jsonResponse(result);
-}
-
-function handleAddComment(sessionToken, params) {
-  var postId = params.postId;
-  var text = params.text || '';
-  if (!postId) {
-    return jsonResponse({success: false, error: 'Post ID saknas'}, 400);
-  }
-  if (!text) {
-    return jsonResponse({success: false, error: 'Kommentar saknas'}, 400);
-  }
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var result = addComment(postId, session.email, text);
-  return jsonResponse(result);
-}
-
-function handleGetReactions(postId) {
-  if (!postId) {
-    return jsonResponse({success: false, error: 'Post ID saknas'}, 400);
-  }
-  var result = getPostReactions(postId);
-  return jsonResponse(result);
-}
-
-function handleGetComments(postId) {
-  if (!postId) {
-    return jsonResponse({success: false, error: 'Post ID saknas'}, 400);
-  }
-  var result = getPostComments(postId);
-  return jsonResponse(result);
-}
-
-function handleGetAccounts(sessionToken) {
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var userAccount = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', session.email);
-  if (!userAccount || userAccount.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan lista konton'}, 403);
-  }
-  var result = getAccounts();
-  return jsonResponse(result);
-}
-
-function handleCreateAccount(sessionToken, params) {
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var userAccount = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', session.email);
-  if (!userAccount || userAccount.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan skapa konton'}, 403);
-  }
-  var email = params.email;
-  var name = params.name;
-  var role = params.role || 'customer';
-  if (!email || !name) {
-    return jsonResponse({success: false, error: 'Email och namn krävs'}, 400);
-  }
-  var result = createAccount(email, name, role);
-  return jsonResponse(result);
-}
-
-function handleUpdateAccount(sessionToken, params) {
-  var session = verifySession(sessionToken);
-  if (!session.valid) {
-    return jsonResponse({success: false, error: 'Ogiltig session'}, 401);
-  }
-  var userAccount = findRowByColumn(CONFIG.SHEETS.ACCOUNTS, 'email', session.email);
-  if (!userAccount || userAccount.role !== 'admin') {
-    return jsonResponse({success: false, error: 'Endast admins kan uppdatera konton'}, 403);
-  }
-  var email = params.email;
-  var name = params.name;
-  var role = params.role;
-  if (!email) {
-    return jsonResponse({success: false, error: 'Email krävs'}, 400);
-  }
-  var result = updateAccount(email, name, role);
-  return jsonResponse(result);
-}
-
-// DEL 3 SLUT - Fortsätt med DEL 4 (testfunktioner)
-// =============================================================================
-// BYGGFLÖDE - Apps Script Backend - DEL 4 av 4 (SISTA DELEN)
-// KOPIERA DETTA DIREKT EFTER DEL 3
-// =============================================================================
-
-// -----------------------------------------------------------------------------
-// TESTFUNKTIONER
-// -----------------------------------------------------------------------------
-
-function TEST_completeAdminFlow() {
-  Logger.log('=== KOMPLETT ADMIN-FLÖDE ===\n');
-  var email = 'andersberggren78@hotmail.com';
-  
-  Logger.log('1. Skapa projekt med steg...');
-  var steps = ['Rivning', 'Tätskikt', 'Flytspackling'];
-  var project = createProjectWithSteps('Test Admin', 'Test av admin-funktioner', email, steps);
-  Logger.log('Projekt ID: ' + project.projectId);
-  Logger.log('Steg skapade: ' + project.steps.length);
-  
-  Logger.log('\n2. Markera första steget som klart...');
-  var firstStep = project.steps[0];
-  completeProjectStep(firstStep.stepId);
-  
-  Logger.log('\n3. Skapa inlägg för första steget...');
-  var post = createPostForStep(project.projectId, firstStep.stepId, email, 'Rivningen är klar! Allt gammalt är borta.', []);
-  Logger.log('Post ID: ' + post.postId);
-  
-  Logger.log('\n4. Hämta alla steg med status...');
-  var allSteps = getProjectSteps(project.projectId);
-  for (var i = 0; i < allSteps.steps.length; i++) {
-    var step = allSteps.steps[i];
-    Logger.log('  ' + step.step_name + ': ' + step.status);
-  }
-  
-  Logger.log('\n=== ADMIN-FLÖDE KLART! ===');
-}
-
-function TEST_accountManagement() {
-  Logger.log('=== TEST KONTOHANTERING ===\n');
-  
-  Logger.log('1. Lista alla konton...');
-  var accounts = getAccounts();
-  Logger.log('Antal konton: ' + accounts.count);
-  
-  Logger.log('\n2. Skapa testkonto...');
-  var newAccount = createAccount('test.kund@example.com', 'Test Kund', 'customer');
-  Logger.log(JSON.stringify(newAccount, null, 2));
-  
-  Logger.log('\n3. Uppdatera konto...');
-  var updated = updateAccount('test.kund@example.com', 'Test Kund Uppdaterad', 'customer');
-  Logger.log(JSON.stringify(updated, null, 2));
-  
-  Logger.log('\n=== KONTOHANTERING TESTAD! ===');
-}
-
-Logger.log('✓ Byggflöde Backend v2.0 loaded - Full Admin features ready!');
+/* =========================
+   LOGG VID LADDA IN
+   ========================= */
+(function(){
+  try {
+    Logger.log('✓ Byggflöde Backend v3.2 laddad');
+  } catch(e) {}
+})();
