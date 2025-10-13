@@ -35,22 +35,75 @@
     /* =========================
        API-HJÄLPARE
        ========================= */
-    const api = {
-      async get(path, params = {}) {
-        const url = new URL(API_URL);
-        url.searchParams.set('path', path);
-        Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-        const res = await fetch(url.toString(), { method: 'GET' });
-        return res.json();
-      },
-      async post(path, data = {}) {
-        const form = new URLSearchParams();
-        form.set('path', path);
-        Object.entries(data).forEach(([k, v]) => form.append(k, v));
-        const res = await fetch(API_URL, { method: 'POST', body: form, redirect: 'follow' });
-        return res.json();
+  /* =========================
+   API-HJÄLPARE (FIXAD VERSION)
+   ========================= */
+const api = {
+  async get(path, params = {}) {
+    const url = new URL(API_URL);
+    url.searchParams.set('path', path);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        url.searchParams.set(k, String(v));
       }
-    };
+    });
+    
+    console.log('GET Request:', url.toString());
+    
+    try {
+      const res = await fetch(url.toString(), { 
+        method: 'GET',
+        redirect: 'follow'
+      });
+      const data = await res.json();
+      console.log('GET Response:', data);
+      return data;
+    } catch (error) {
+      console.error('GET Error:', error);
+      throw error;
+    }
+  },
+  
+  async post(path, data = {}) {
+    const form = new URLSearchParams();
+    form.set('path', path);
+    
+    Object.entries(data).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        form.append(k, String(v));
+      }
+    });
+    
+    console.log('POST Request to:', API_URL);
+    console.log('POST Data:', Object.fromEntries(form));
+    
+    try {
+      const res = await fetch(API_URL, { 
+        method: 'POST', 
+        body: form,
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+      
+      const responseText = await res.text();
+      console.log('POST Response (raw):', responseText);
+      
+      try {
+        const data = JSON.parse(responseText);
+        console.log('POST Response (parsed):', data);
+        return data;
+      } catch (e) {
+        console.error('Failed to parse JSON:', responseText);
+        return { success: false, error: 'Invalid response from server' };
+      }
+    } catch (error) {
+      console.error('POST Error:', error);
+      throw error;
+    }
+  }
+};
 
     /* =========================
        UI: Modal
