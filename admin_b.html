@@ -10,33 +10,31 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Tailwind -->
+  <!-- Tailwind (CDN för PoC) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
-    .line-clamp-3 {
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-[#eef6ff]">
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback } = React;
 
-    // =========================
-    // KONFIG
-    // =========================
-    // Byt till din egen Web App URL om du har uppdaterat deploy:
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
+    /* =========================
+       KONFIG
+       ========================= */
+    // BYT till din Apps Script Web App URL (slutar på /exec)
+    const API_URL = 'DIN_APPS_SCRIPT_WEB_APP_URL_HÄR';
 
-    // =========================
-    // API-HJÄLPARE
-    // =========================
+    /* =========================
+       API-HJÄLPARE
+       ========================= */
     const api = {
       async get(path, params = {}) {
         const url = new URL(API_URL);
@@ -54,9 +52,9 @@
       }
     };
 
-    // =========================
-    // UI: Modal
-    // =========================
+    /* =========================
+       UI: Modal
+       ========================= */
     function Modal({ isOpen, onClose, title, children, wide=false }) {
       if (!isOpen) return null;
       return (
@@ -72,10 +70,189 @@
       );
     }
 
-    // =========================
-    // LOGIN
-    // =========================
-    function LoginPage({ onLogin }) {
+    /* =========================
+       FUN LOADER & SKELETONS
+       ========================= */
+    function FunLoader({ textList, interval = 1400 }) {
+      const fallback = [
+        'Blandar bruket…',
+        'Mäter två gånger, sågar en…',
+        'Ställer laserpasset…',
+        'Rullar ut tätskiktet…',
+        'Kaffepaus ☕ (snart klart)…',
+        'Skyddsglasögon på…',
+        'Spikar sista listen…',
+        'Bär in kakelkartonger…',
+        'Sopar rent inför nästa steg…',
+        'Plockar fram momentnyckeln…',
+        'Sätter fogkryss…',
+        'Drar kablar i kanaler…',
+        'Kontrollerar våg på golvet…',
+        'Täcker över med dammskydd…',
+        'Tömmer skruvhinken…'
+      ];
+      const msgs = React.useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
+
+      const shuffle = (arr) => {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      };
+
+      const [order, setOrder] = React.useState(() => shuffle([...Array(msgs.length).keys()]));
+      const [idx, setIdx] = React.useState(0);
+
+      React.useEffect(() => {
+        setOrder(shuffle([...Array(msgs.length).keys()]));
+        setIdx(0);
+      }, [msgs.length]);
+
+      React.useEffect(() => {
+        const id = setInterval(() => {
+          setIdx((prev) => {
+            const next = prev + 1;
+            if (next >= msgs.length) {
+              setOrder(shuffle([...Array(msgs.length).keys()]));
+              return 0;
+            }
+            return next;
+          });
+        }, interval);
+        return () => clearInterval(id);
+      }, [msgs.length, interval]);
+
+      const phrase = msgs[order[idx]] || '';
+
+      return (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <div className="text-gray-700 font-semibold">{phrase}</div>
+          <div className="text-gray-400 text-sm mt-1">Det kan ta någon sekund…</div>
+        </div>
+      );
+    }
+
+    function ProjectSkeleton() {
+      return (
+        <div className="bg-white rounded-lg shadow p-6 animate-pulse">
+          <div className="h-6 bg-gray-200 rounded w-2/3 mb-3"></div>
+          <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-5/6 mb-4"></div>
+          <div className="h-3 bg-gray-200 rounded w-full"></div>
+        </div>
+      );
+    }
+
+    /* =========================
+       HELSKÄRMS-LIGHTBOX
+       ========================= */
+    function ImageLightbox({ isOpen, images, index, onClose, onIndex }) {
+      if (!isOpen || !images || images.length === 0) return null;
+      const img = images[index] || images[0];
+
+      const prev = (e) => { e?.stopPropagation(); onIndex((index - 1 + images.length) % images.length); };
+      const next = (e) => { e?.stopPropagation(); onIndex((index + 1) % images.length); };
+
+      return (
+        <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col" onClick={onClose}>
+          <div className="flex items-center justify-between p-4 text-white">
+            <button onClick={onClose} className="text-3xl leading-none">×</button>
+            <div className="text-sm opacity-80">{index + 1}/{images.length}</div>
+          </div>
+          <div className="flex-1 flex items-center justify-center px-4">
+            <img
+              src={img.directUrl || img.thumbnailUrl || img.fullUrl}
+              alt=""
+              className="max-h-[85vh] max-w-[95vw] object-contain"
+              onClick={(e)=>e.stopPropagation()}
+              loading="lazy"
+            />
+          </div>
+          {images.length > 1 && (
+            <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 pointer-events-none">
+              <button onClick={prev} className="pointer-events-auto text-white text-3xl px-3 py-1 rounded hover:bg-white/10">‹</button>
+              <button onClick={next} className="pointer-events-auto text-white text-3xl px-3 py-1 rounded hover:bg-white/10">›</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* =========================
+       LOGIN
+       ========================= */
+    function AuthPage({ onLogin }) {
+      const [tab, setTab] = useState('admin'); // admin | customer
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl">
+            <div className="bg-white rounded-2xl shadow-2xl grid md:grid-cols-2 overflow-hidden">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white p-8">
+                <h1 className="text-4xl font-bold mb-2">🏗️ Byggflöde</h1>
+                <p className="opacity-90">Dela uppdateringar och bilder i realtid med dina kunder.</p>
+                <div className="mt-8 text-sm opacity-90">
+                  <p>• Admin loggar in med användarnamn + 6-siffrig kod</p>
+                  <p>• Kunder loggar in med e-post + engångskod</p>
+                </div>
+              </div>
+              <div className="p-8">
+                <div className="flex gap-2 mb-6">
+                  <button onClick={()=>setTab('admin')} className={"flex-1 px-4 py-2 rounded-lg " + (tab==='admin' ? 'bg-blue-600 text-white' : 'bg-gray-100')}>
+                    Admin
+                  </button>
+                  <button onClick={()=>setTab('customer')} className={"flex-1 px-4 py-2 rounded-lg " + (tab==='customer' ? 'bg-blue-600 text-white' : 'bg-gray-100')}>
+                    Kund
+                  </button>
+                </div>
+                {tab==='admin' ? <AdminLogin onLogin={onLogin}/> : <CustomerLogin onLogin={onLogin}/>}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AdminLogin({ onLogin }) {
+      const [username, setUsername] = useState('admin');
+      const [password, setPassword] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+
+      const submit = async (e) => {
+        e.preventDefault();
+        setLoading(true); setError('');
+        try {
+          const res = await api.post('auth/admin-login', { username, password });
+          if (!res.success) throw new Error(res.error || 'Fel inloggning');
+          const me = await api.get('me', { session: res.sessionToken });
+          onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'admin' });
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
+      };
+
+      return (
+        <form onSubmit={submit} className="space-y-4">
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
+            <input value={username} onChange={(e)=>setUsername(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
+            <input value={password} onChange={(e)=>setPassword(e.target.value)} inputMode="numeric" pattern="\d{6}" maxLength="6"
+                   className="w-full px-3 py-2 border rounded-lg" placeholder="••••••" required />
+          </div>
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+            {loading ? 'Loggar in…' : 'Logga in som admin'}
+          </button>
+        </form>
+      );
+    }
+
+    function CustomerLogin({ onLogin }) {
       const [email, setEmail] = useState('');
       const [otpSent, setOtpSent] = useState(false);
       const [otp, setOtp] = useState('');
@@ -89,9 +266,7 @@
           const res = await api.post('auth/request-otp', { email, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Kunde inte skicka kod');
           setOtpSent(true);
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       const verifyOTP = async (e) => {
@@ -100,63 +275,46 @@
         try {
           const res = await api.post('auth/verify-otp', { email, code: otp, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Ogiltig kod');
-          // Hämta roll
           const me = await api.get('me', { session: res.sessionToken });
           onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'customer' });
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl font-bold text-gray-800 mb-2">🏗️ Byggflöde</h1>
-              <p className="text-gray-600">Följ ditt byggprojekt</p>
-            </div>
-
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>
-            )}
-
-            {!otpSent ? (
-              <form onSubmit={requestOTP}>
-                <div className="mb-6">
-                  <label className="block text-gray-700 font-semibold mb-2">Email</label>
-                  <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="din@email.com" required/>
-                </div>
-                <button type="submit" disabled={loading}
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
-                  {loading ? 'Skickar...' : 'Skicka inloggningskod'}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={verifyOTP}>
-                <div className="mb-4 text-center text-green-600">✓ Kod skickad till {email}</div>
-                <div className="mb-6">
-                  <label className="block text-gray-700 font-semibold mb-2">Ange 6-siffrig kod</label>
-                  <input type="text" value={otp} onChange={(e)=>setOtp(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
-                    placeholder="123456" maxLength="6" required />
-                </div>
-                <button type="submit" disabled={loading}
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition mb-3">
-                  {loading ? 'Verifierar...' : 'Logga in'}
-                </button>
-                <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">Skicka ny kod</button>
-              </form>
-            )}
-          </div>
-        </div>
+        <>
+          {!otpSent ? (
+            <form onSubmit={requestOTP} className="space-y-4">
+              {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">E-post</label>
+                <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="din@email.com" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+                {loading ? 'Skickar…' : 'Skicka inloggningskod'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={verifyOTP} className="space-y-4">
+              {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+              <div className="text-green-700">✓ Kod skickad till {email}</div>
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">Ange kod</label>
+                <input value={otp} onChange={(e)=>setOtp(e.target.value)} maxLength="6" inputMode="numeric"
+                       className="w-full px-3 py-2 border rounded-lg text-center text-2xl tracking-widest" placeholder="123456" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+                {loading ? 'Verifierar…' : 'Logga in'}
+              </button>
+              <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">Skicka ny kod</button>
+            </form>
+          )}
+        </>
       );
     }
 
-    // =========================
-    // GEMENSAMMA UI-BLOCK
-    // =========================
+    /* =========================
+       GEMENSAMMA UI-BLOCK
+       ========================= */
     function Header({ email, role, onLogout }) {
       return (
         <header className="bg-white shadow">
@@ -281,117 +439,13 @@
       );
     }
 
-    // =========================
-    // MODALER (Admin)
-    // =========================
+    /* =========================
+       MODALER (Admin)
+       ========================= */
     function CreateAccountModal({ isOpen, onClose, session }) {
       const [email, setEmail] = useState('');
       const [name, setName] = useState('');
       const [role, setRole] = useState('customer');
-      const [loading, setLoading] = useState(false);
-      const [msg, setMsg] = useState('');
-      const [err, setErr] = useState('');
-
-      const submit = async (e) => {
-        e.preventDefault(); setLoading(true); setMsg(''); setErr('');
-        try {
-          const res = await api.post('account/create', { session: session.sessionToken, email, name, role });
-          if (!res.success) throw new Error(res.error || 'Kunde inte skapa konto');
-          setMsg('Konto skapat!');
-          setEmail(''); setName(''); setRole('customer');
-          setTimeout(onClose, 1200);
-        } catch (er) { setErr(er.message); } finally { setLoading(false); }
-      };
-
-      return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Skapa konto">
-          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
-          {msg && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{msg}</div>}
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Namn</label>
-              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">E-post</label>
-              <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Roll</label>
-              <select value={role} onChange={(e)=>setRole(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
-                <option value="customer">Kund</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
-              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
-                {loading ? 'Skapar…' : 'Skapa'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      );
-    }
-
-    function CreateProjectModal({ isOpen, onClose, onSuccess, session }) {
-      const [name, setName] = useState('');
-      const [description, setDescription] = useState('');
-      const [steps, setSteps] = useState(['']);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState('');
-
-      const addStep = () => setSteps([...steps, '']);
-      const removeStep = (i) => setSteps(steps.filter((_, idx)=>idx!==i));
-      const updateStep = (i, val) => setSteps(steps.map((s,idx)=>idx===i?val:s));
-
-      const handleSubmit = async (e) => {
-        e.preventDefault(); setLoading(true); setError('');
-        const validSteps = steps.map(s=>s.trim()).filter(Boolean);
-        if (validSteps.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
-        try {
-          const res = await api.post('project/create', { session: session.sessionToken, name, description, steps: validSteps.join(',') });
-          if (!res.success) throw new Error(res.error || 'Kunde inte skapa projekt');
-          onSuccess && onSuccess(); onClose(); setName(''); setDescription(''); setSteps(['']);
-        } catch (err) { setError(err.message); } finally { setLoading(false); }
-      };
-
-      return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Skapa nytt projekt" wide>
-          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{error}</div>}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Projektnamn</label>
-              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg" placeholder="t.ex. Badrumsrenovering Andersson"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Beskrivning</label>
-              <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-2">Steg</label>
-              {steps.map((s, i)=>(
-                <div key={i} className="flex gap-2 mb-2">
-                  <input value={s} onChange={(e)=>updateStep(i, e.target.value)} className="flex-1 px-3 py-2 border rounded-lg" placeholder={`Steg ${i+1} (t.ex. Rivning)`}/>
-                  {steps.length>1 && <button type="button" onClick={()=>removeStep(i)} className="px-3 py-2 bg-red-500 text-white rounded-lg">✕</button>}
-                </div>
-              ))}
-              <button type="button" onClick={addStep} className="px-3 py-2 bg-gray-200 rounded-lg">+ Lägg till steg</button>
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
-              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
-                {loading ? 'Skapar…' : 'Skapa projekt'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      );
-    }
-
-    function InviteMemberModal({ isOpen, onClose, project, session }) {
-      const [email, setEmail] = useState('');
-      const [notifyOnPost, setNotifyOnPost] = useState(true);
       const [loading, setLoading] = useState(false);
       const [msg, setMsg] = useState('');
       const [err, setErr] = useState('');
@@ -452,7 +506,6 @@
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
         try {
-          // Parallell uppladdning
           const uploads = await Promise.all((files || []).map(async (f) => {
             const base64 = await readFileAsBase64(f);
             return api.post('file/upload', {
@@ -498,9 +551,9 @@
       );
     }
 
-    // =========================
-    // PROJEKTVYER
-    // =========================
+    /* =========================
+       PROJEKTVYER
+       ========================= */
     function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
       const isCompleted = step.status === 'completed';
       const [showCreatePost, setShowCreatePost] = React.useState(false);
@@ -540,6 +593,12 @@
       const [feed, setFeed] = useState([]);
       const [loading, setLoading] = useState(true);
 
+      const [lightboxOpen, setLightboxOpen] = useState(false);
+      const [lightboxImages, setLightboxImages] = useState([]);
+      const [lightboxIndex, setLightboxIndex] = useState(0);
+
+      const openLightbox = (images, idx=0) => { setLightboxImages(images||[]); setLightboxIndex(idx||0); setLightboxOpen(true); };
+
       const load = async () => {
         setLoading(true);
         const res = await api.get('project/feed', { projectId, session: session.sessionToken });
@@ -548,49 +607,63 @@
       };
       useEffect(()=>{ load(); }, [projectId]);
 
-      if (loading) return <div className="text-gray-600">Laddar flöde…</div>;
+      if (loading) return <FunLoader /> ;
       if (feed.length===0) return <div className="text-gray-600">Inga inlägg ännu.</div>;
 
       return (
-        <div className="space-y-4">
-          {feed.map(post => (
-            <div key={post.post_id} className="bg-white rounded-lg p-5 shadow">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                  {(post.author_email||'?')[0].toUpperCase()}
-                </div>
-                <div className="flex-1">
-                  <div className="font-semibold text-gray-800">{post.author_email}</div>
-                  <div className="text-sm text-gray-500">
-                    {post.step_name ? `${post.step_name} • ` : ''}{new Date(post.created_at).toLocaleString('sv-SE')}
+        <>
+          <div className="space-y-4">
+            {feed.map(post => (
+              <div key={post.post_id} className="bg-white rounded-lg p-5 shadow">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {(post.author_email||'?')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">{post.author_email}</div>
+                    <div className="text-sm text-gray-500">
+                      {post.step_name ? `${post.step_name} • ` : ''}{new Date(post.created_at).toLocaleString('sv-SE')}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <p className="text-gray-800 whitespace-pre-wrap">{post.text}</p>
-              {post.images && post.images.length>0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
-                  {post.images.map((img,i)=>(
-                    <img key={i} src={img.thumbnailUrl} loading="lazy" alt="Bild"
-                      className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
-                      onClick={()=>window.open(img.fullUrl,'_blank')}/>
-                  ))}
+                <p className="text-gray-800 whitespace-pre-wrap">{post.text}</p>
+                {post.images && post.images.length>0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
+                    {post.images.map((img,i)=>(
+                      <img key={i}
+                        src={img.thumbnailUrl || img.directUrl}
+                        loading="lazy"
+                        alt="Bild"
+                        className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
+                        onClick={()=>openLightbox(post.images, i)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex items-center gap-3">
+                  <ReactionBar post={post} session={session}/>
+                  <span className="text-sm text-gray-500">{post.comments_count || 0} kommentarer</span>
                 </div>
-              )}
-              <div className="mt-3 flex items-center gap-3">
-                <ReactionBar post={post} session={session}/>
-                <span className="text-sm text-gray-500">{post.comments_count || 0} kommentarer</span>
+                <Comments postId={post.post_id} session={session}/>
               </div>
-              <Comments postId={post.post_id} session={session}/>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+
+          <ImageLightbox
+            isOpen={lightboxOpen}
+            images={lightboxImages}
+            index={lightboxIndex}
+            onClose={()=>setLightboxOpen(false)}
+            onIndex={setLightboxIndex}
+          />
+        </>
       );
     }
 
     function ProjectView({ project, session, userRole, onBack, onLogout }) {
       const [stepsWithCounts, setStepsWithCounts] = useState([]);
       const [loadingCounts, setLoadingCounts] = useState(true);
-      const [tab, setTab] = useState('feed'); // 'feed' | 'steps'
+      const [tab, setTab] = useState('feed');
 
       const loadStepsWithCounts = async () => {
         setLoadingCounts(true);
@@ -603,7 +676,7 @@
       const pct = Number(project.completion_percentage || 0);
 
       return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen">
           <header className="bg-white shadow">
             <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
               <div className="flex items-center gap-4">
@@ -611,9 +684,6 @@
                 <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
               </div>
               <div className="flex items-center gap-2">
-                {userRole==='admin' && (
-                  <button onClick={()=>setShowInvite(true)} className="hidden"></button>
-                )}
                 <button onClick={onLogout} className="text-red-600 hover:text-red-800">Logga ut</button>
               </div>
             </div>
@@ -640,7 +710,7 @@
               <ProjectFeed projectId={project.project_id} session={session}/>
             ) : (
               loadingCounts ? (
-                <div className="text-center text-gray-600">Laddar steg…</div>
+                <FunLoader textList={['Räknar inlägg…','Packar verktygslådan…']}/>
               ) : stepsWithCounts.length===0 ? (
                 <div className="bg-white rounded-lg shadow p-8 text-center text-gray-600">Inga steg har lagts till än</div>
               ) : (
@@ -664,22 +734,22 @@
       );
     }
 
-    // =========================
-    // HUVUDAPP
-    // =========================
+    /* =========================
+       HUVUDAPP
+       ========================= */
     function App() {
-      const [session, setSession] = useState(null); // {email, sessionToken, role}
-      const [loading, setLoading] = useState(true);
+      const [session, setSession] = useState(null);
+      const [loadingApp, setLoadingApp] = useState(true);
       const [projects, setProjects] = useState([]);
+      const [loadingProjects, setLoadingProjects] = useState(false);
       const [selectedProject, setSelectedProject] = useState(null);
       const [showCreateProject, setShowCreateProject] = useState(false);
       const [showCreateAccount, setShowCreateAccount] = useState(false);
-      const [showInvite, setShowInvite] = useState(false);
 
       useEffect(()=>{
         const saved = localStorage.getItem('byggflode_session');
         if (saved) setSession(JSON.parse(saved));
-        setLoading(false);
+        setLoadingApp(false);
       },[]);
 
       useEffect(()=>{
@@ -698,21 +768,29 @@
 
       const loadProjects = async () => {
         if (!session) return;
+        setLoadingProjects(true);
         const res = await api.get('projects', { session: session.sessionToken });
         if (res.success) setProjects(res.projects || []);
+        setLoadingProjects(false);
       };
 
-      if (loading) {
+      if (loadingApp) {
         return (
-          <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <div className="text-white text-2xl">Laddar…</div>
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-gray-700 text-2xl">Laddar…</div>
           </div>
         );
       }
 
-      if (!session) return <LoginPage onLogin={onLogin} />;
+      if (!session) return <AuthPage onLogin={onLogin} />;
 
-      // Om projekt öppnats → visa projektsida
+      const isAdmin = session.role === 'admin';
+
+      if (!isAdmin && projects.length === 1 && !selectedProject) {
+        setSelectedProject(projects[0]);
+        return null;
+      }
+
       if (selectedProject) {
         return (
           <>
@@ -724,24 +802,8 @@
               onBack={() => { setSelectedProject(null); loadProjects(); }}
               onLogout={onLogout}
             />
-            {/* Invite modal top-level för tillgång till project */}
-            <InviteMemberModal
-              isOpen={showInvite}
-              onClose={()=>setShowInvite(false)}
-              project={selectedProject}
-              session={session}
-            />
           </>
         );
-      }
-
-      // ROOT DASHBOARD
-      const isAdmin = session.role === 'admin';
-
-      // Kund: om bara ett projekt → öppna direkt feed
-      if (!isAdmin && projects.length === 1) {
-        setSelectedProject(projects[0]);
-        return null;
       }
 
       return (
@@ -758,7 +820,11 @@
               )}
             </div>
 
-            {projects.length === 0 ? (
+            {loadingProjects ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Array.from({length:6}).map((_,i)=><ProjectSkeleton key={i}/>)}
+              </div>
+            ) : projects.length === 0 ? (
               <div className="bg-white rounded-lg shadow p-8 text-center">
                 <p className="text-gray-600">{isAdmin ? 'Du har inga projekt än.' : 'Du är inte inbjuden till något projekt ännu.'}</p>
               </div>
@@ -771,16 +837,120 @@
             )}
           </main>
 
-          {/* Modaler */}
           <CreateProjectModal isOpen={showCreateProject} onClose={()=>setShowCreateProject(false)} onSuccess={loadProjects} session={session}/>
           <CreateAccountModal isOpen={showCreateAccount} onClose={()=>setShowCreateAccount(false)} session={session}/>
         </>
       );
     }
 
-    // Render
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
 </body>
-</html>
+</html> {
+          const res = await api.post('account/create', { session: session.sessionToken, email, name, role });
+          if (!res.success) throw new Error(res.error || 'Kunde inte skapa konto');
+          setMsg('Konto skapat!');
+          setEmail(''); setName(''); setRole('customer');
+          setTimeout(onClose, 1200);
+        } catch (er) { setErr(er.message); } finally { setLoading(false); }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Skapa konto">
+          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
+          {msg && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{msg}</div>}
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Namn</label>
+              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">E-post</label>
+              <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Roll</label>
+              <select value={role} onChange={(e)=>setRole(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+                <option value="customer">Kund</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
+              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
+                {loading ? 'Skapar…' : 'Skapa'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    function CreateProjectModal({ isOpen, onClose, onSuccess, session }) {
+      const [name, setName] = useState('');
+      const [description, setDescription] = useState('');
+      const [steps, setSteps] = useState(['']);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+
+      const addStep = () => setSteps([...steps, '']);
+      const removeStep = (i) => setSteps(steps.filter((_, idx)=>idx!==i));
+      const updateStep = (i, val) => setSteps(steps.map((s,idx)=>idx===i?val:s));
+
+      const handleSubmit = async (e) => {
+        e.preventDefault(); setLoading(true); setError('');
+        const valid = steps.map(s=>s.trim()).filter(Boolean);
+        if (valid.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
+        try {
+          const res = await api.post('project/create', {
+            session: session.sessionToken, name, description, steps: valid.join(',')
+          });
+          if (!res.success) throw new Error(res.error || 'Kunde inte skapa projekt');
+          onSuccess && onSuccess(); onClose(); setName(''); setDescription(''); setSteps(['']);
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Skapa nytt projekt" wide>
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{error}</div>}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Projektnamn</label>
+              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg" placeholder="t.ex. Badrumsrenovering Andersson"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Beskrivning</label>
+              <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-2">Steg</label>
+              {steps.map((s, i)=>(
+                <div key={i} className="flex gap-2 mb-2">
+                  <input value={s} onChange={(e)=>updateStep(i, e.target.value)} className="flex-1 px-3 py-2 border rounded-lg" placeholder={`Steg ${i+1} (t.ex. Rivning)`}/>
+                  {steps.length>1 && <button type="button" onClick={()=>removeStep(i)} className="px-3 py-2 bg-red-500 text-white rounded-lg">✕</button>}
+                </div>
+              ))}
+              <button type="button" onClick={addStep} className="px-3 py-2 bg-gray-200 rounded-lg">+ Lägg till steg</button>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
+              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
+                {loading ? 'Skapar…' : 'Skapa projekt'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    function InviteMemberModal({ isOpen, onClose, project, session }) {
+      const [email, setEmail] = useState('');
+      const [notifyOnPost, setNotifyOnPost] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [msg, setMsg] = useState('');
+      const [err, setErr] = useState('');
+
+      const submit = async (e) => {
+        e.preventDefault(); setLoading(true); setMsg(''); setErr('');
+        try
