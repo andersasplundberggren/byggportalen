@@ -451,15 +451,147 @@
       const [err, setErr] = useState('');
 
       const submit = async (e) => {
-        e.preventDefault(); setLoading(true); setMsg(''); setErr('');
+        e.preventDefault(); 
+        setLoading(true); 
+        setMsg(''); 
+        setErr('');
+        try {
+          const res = await api.post('account/create', { 
+            session: session.sessionToken, 
+            email, 
+            name, 
+            role 
+          });
+          if (!res.success) throw new Error(res.error || 'Kunde inte skapa konto');
+          setMsg('Konto skapat!');
+          setEmail(''); 
+          setName(''); 
+          setRole('customer');
+          setTimeout(onClose, 1200);
+        } catch (er) { 
+          setErr(er.message); 
+        } finally { 
+          setLoading(false); 
+        }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Skapa konto">
+          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
+          {msg && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{msg}</div>}
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Namn</label>
+              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">E-post</label>
+              <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Roll</label>
+              <select value={role} onChange={(e)=>setRole(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+                <option value="customer">Kund</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
+              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
+                {loading ? 'Skapar…' : 'Skapa'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    function CreateProjectModal({ isOpen, onClose, onSuccess, session }) {
+      const [name, setName] = useState('');
+      const [description, setDescription] = useState('');
+      const [steps, setSteps] = useState(['']);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+
+      const addStep = () => setSteps([...steps, '']);
+      const removeStep = (i) => setSteps(steps.filter((_, idx)=>idx!==i));
+      const updateStep = (i, val) => setSteps(steps.map((s,idx)=>idx===i?val:s));
+
+      const handleSubmit = async (e) => {
+        e.preventDefault(); setLoading(true); setError('');
+        const valid = steps.map(s=>s.trim()).filter(Boolean);
+        if (valid.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
+        try {
+          const res = await api.post('project/create', {
+            session: session.sessionToken, name, description, steps: valid.join(',')
+          });
+          if (!res.success) throw new Error(res.error || 'Kunde inte skapa projekt');
+          onSuccess && onSuccess(); onClose(); setName(''); setDescription(''); setSteps(['']);
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Skapa nytt projekt" wide>
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{error}</div>}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Projektnamn</label>
+              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg" placeholder="t.ex. Badrumsrenovering Andersson"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-1">Beskrivning</label>
+              <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-gray-700 font-semibold mb-2">Steg</label>
+              {steps.map((s, i)=>(
+                <div key={i} className="flex gap-2 mb-2">
+                  <input value={s} onChange={(e)=>updateStep(i, e.target.value)} className="flex-1 px-3 py-2 border rounded-lg" placeholder={`Steg ${i+1} (t.ex. Rivning)`}/>
+                  {steps.length>1 && <button type="button" onClick={()=>removeStep(i)} className="px-3 py-2 bg-red-500 text-white rounded-lg">✕</button>}
+                </div>
+              ))}
+              <button type="button" onClick={addStep} className="px-3 py-2 bg-gray-200 rounded-lg">+ Lägg till steg</button>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
+              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
+                {loading ? 'Skapar…' : 'Skapa projekt'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    function InviteMemberModal({ isOpen, onClose, project, session }) {
+      const [email, setEmail] = useState('');
+      const [notifyOnPost, setNotifyOnPost] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [msg, setMsg] = useState('');
+      const [err, setErr] = useState('');
+
+      const submit = async (e) => {
+        e.preventDefault(); 
+        setLoading(true); 
+        setMsg(''); 
+        setErr('');
         try {
           const res = await api.post('project/add-member', {
-            session: session.sessionToken, projectId: project.project_id, memberEmail: email, role: 'customer', notifyOnPost
+            session: session.sessionToken, 
+            projectId: project.project_id, 
+            memberEmail: email, 
+            role: 'customer', 
+            notifyOnPost
           });
           if (!res.success) throw new Error(res.error || 'Kunde inte bjuda in');
-          setMsg('Medlem tillagd!'); setEmail('');
+          setMsg('Medlem tillagd!'); 
+          setEmail('');
           setTimeout(()=>{ setMsg(''); onClose(); }, 1200);
-        } catch (er) { setErr(er.message); } finally { setLoading(false); }
+        } catch (er) { 
+          setErr(er.message); 
+        } finally { 
+          setLoading(false); 
+        }
       };
 
       return (
@@ -847,110 +979,4 @@
     root.render(<App />);
   </script>
 </body>
-</html> {
-          const res = await api.post('account/create', { session: session.sessionToken, email, name, role });
-          if (!res.success) throw new Error(res.error || 'Kunde inte skapa konto');
-          setMsg('Konto skapat!');
-          setEmail(''); setName(''); setRole('customer');
-          setTimeout(onClose, 1200);
-        } catch (er) { setErr(er.message); } finally { setLoading(false); }
-      };
-
-      return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Skapa konto">
-          {err && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{err}</div>}
-          {msg && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-3">{msg}</div>}
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Namn</label>
-              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">E-post</label>
-              <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Roll</label>
-              <select value={role} onChange={(e)=>setRole(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
-                <option value="customer">Kund</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
-              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
-                {loading ? 'Skapar…' : 'Skapa'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      );
-    }
-
-    function CreateProjectModal({ isOpen, onClose, onSuccess, session }) {
-      const [name, setName] = useState('');
-      const [description, setDescription] = useState('');
-      const [steps, setSteps] = useState(['']);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState('');
-
-      const addStep = () => setSteps([...steps, '']);
-      const removeStep = (i) => setSteps(steps.filter((_, idx)=>idx!==i));
-      const updateStep = (i, val) => setSteps(steps.map((s,idx)=>idx===i?val:s));
-
-      const handleSubmit = async (e) => {
-        e.preventDefault(); setLoading(true); setError('');
-        const valid = steps.map(s=>s.trim()).filter(Boolean);
-        if (valid.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
-        try {
-          const res = await api.post('project/create', {
-            session: session.sessionToken, name, description, steps: valid.join(',')
-          });
-          if (!res.success) throw new Error(res.error || 'Kunde inte skapa projekt');
-          onSuccess && onSuccess(); onClose(); setName(''); setDescription(''); setSteps(['']);
-        } catch (err) { setError(err.message); } finally { setLoading(false); }
-      };
-
-      return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Skapa nytt projekt" wide>
-          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3">{error}</div>}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Projektnamn</label>
-              <input value={name} onChange={(e)=>setName(e.target.value)} required className="w-full px-3 py-2 border rounded-lg" placeholder="t.ex. Badrumsrenovering Andersson"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-1">Beskrivning</label>
-              <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-lg"/>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-semibold mb-2">Steg</label>
-              {steps.map((s, i)=>(
-                <div key={i} className="flex gap-2 mb-2">
-                  <input value={s} onChange={(e)=>updateStep(i, e.target.value)} className="flex-1 px-3 py-2 border rounded-lg" placeholder={`Steg ${i+1} (t.ex. Rivning)`}/>
-                  {steps.length>1 && <button type="button" onClick={()=>removeStep(i)} className="px-3 py-2 bg-red-500 text-white rounded-lg">✕</button>}
-                </div>
-              ))}
-              <button type="button" onClick={addStep} className="px-3 py-2 bg-gray-200 rounded-lg">+ Lägg till steg</button>
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg">Avbryt</button>
-              <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">
-                {loading ? 'Skapar…' : 'Skapa projekt'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      );
-    }
-
-    function InviteMemberModal({ isOpen, onClose, project, session }) {
-      const [email, setEmail] = useState('');
-      const [notifyOnPost, setNotifyOnPost] = useState(true);
-      const [loading, setLoading] = useState(false);
-      const [msg, setMsg] = useState('');
-      const [err, setErr] = useState('');
-
-      const submit = async (e) => {
-        e.preventDefault(); setLoading(true); setMsg(''); setErr('');
-        try
+</html>
