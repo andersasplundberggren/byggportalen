@@ -1,1 +1,16 @@
+# Miljövariabler och känslig data
+.env
+.env.local
+config.local.js
 
+# Personliga inställningar
+.vscode/
+.idea/
+
+# Backup-filer
+*.bak
+*~
+
+# OS-filer
+.DS_Store
+Thumbs.db
