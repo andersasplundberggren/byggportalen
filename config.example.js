@@ -10,11 +10,11 @@
 const CONFIG = {
   // Din Google Apps Script Web App URL
   // Hittas efter deploy i Apps Script: Deploy → Manage deployments → Web app URL
-  API_URL: 'https://script.google.com/macros/s/DITT_SCRIPT_ID_HÄR/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec',
   
   // Ditt Google Sheets Spreadsheet ID
   // Hittas i URL:en: https://docs.google.com/spreadsheets/d/[DETTA_ÄR_ID]/edit
-  SPREADSHEET_ID: 'DITT_SPREADSHEET_ID_HÄR',
+  SPREADSHEET_ID: '1T_SXsx3mgvPJIpdQRP3gbfwYRunqkXWgR_I8Dtlq510',
   
   // Admin-inloggning (dessa värden sätts i SETTINGS-flikat i Sheets)
   ADMIN: {
