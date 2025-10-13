@@ -5,38 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Byggflöde</title>
 
-  <!-- React + Babel UMD (PoC) -->
+  <!-- React + Babel UMD -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Tailwind (CDN – ok för PoC) -->
+  <!-- Tailwind (CDN för PoC) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .modal-overlay { backdrop-filter: blur(4px); }
     .progress-bar { transition: width .4s ease; }
-    .line-clamp-3 {
-      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-    }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
 </head>
-<body class="bg-sky-50">
+<body class="bg-[#eef6ff]">
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback } = React;
 
-    // =========================
-    // KONFIG
-    // =========================
-    // Byt till din egen Web App URL om du har uppdaterat deploy:
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
+    /* =========================
+       KONFIG
+       ========================= */
+    // BYT till din Apps Script Web App URL (slutar på /exec)
+    const API_URL = 'REPLACE_WITH_YOUR_WEB_APP_URL';
 
-    // =========================
-    // API-HJÄLPARE
-    // =========================
+    /* =========================
+       API-HJÄLPARE
+       ========================= */
     const api = {
       async get(path, params = {}) {
         const url = new URL(API_URL);
@@ -54,9 +52,9 @@
       }
     };
 
-    // =========================
-    // UI: Modal
-    // =========================
+    /* =========================
+       UI: Modal
+       ========================= */
     function Modal({ isOpen, onClose, title, children, wide=false }) {
       if (!isOpen) return null;
       return (
@@ -72,9 +70,9 @@
       );
     }
 
-    // =========================
-    // FUN LOADER & SKELETONS
-    // =========================
+    /* =========================
+       FUN LOADER & SKELETONS
+       ========================= */
     function FunLoader({ textList, interval = 1400 }) {
       const fallback = [
         'Blandar bruket…',
@@ -82,7 +80,6 @@
         'Ställer laserpasset…',
         'Rullar ut tätskiktet…',
         'Kaffepaus ☕ (snart klart)…',
-        // Nya korta på samma tema:
         'Skyddsglasögon på…',
         'Spikar sista listen…',
         'Bär in kakelkartonger…',
@@ -94,7 +91,7 @@
         'Täcker över med dammskydd…',
         'Tömmer skruvhinken…'
       ];
-      const msgs = useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
+      const msgs = React.useMemo(() => (textList && textList.length ? textList : fallback), [textList]);
 
       const shuffle = (arr) => {
         const a = arr.slice();
@@ -105,15 +102,15 @@
         return a;
       };
 
-      const [order, setOrder] = useState(() => shuffle([...Array(msgs.length).keys()]));
-      const [idx, setIdx] = useState(0);
+      const [order, setOrder] = React.useState(() => shuffle([...Array(msgs.length).keys()]));
+      const [idx, setIdx] = React.useState(0);
 
-      useEffect(() => {
+      React.useEffect(() => {
         setOrder(shuffle([...Array(msgs.length).keys()]));
         setIdx(0);
       }, [msgs.length]);
 
-      useEffect(() => {
+      React.useEffect(() => {
         const id = setInterval(() => {
           setIdx((prev) => {
             const next = prev + 1;
@@ -149,9 +146,9 @@
       );
     }
 
-    // =========================
-    // HELSKÄRMS-LIGHTBOX
-    // =========================
+    /* =========================
+       HELSKÄRMS-LIGHTBOX
+       ========================= */
     function ImageLightbox({ isOpen, images, index, onClose, onIndex }) {
       if (!isOpen || !images || images.length === 0) return null;
       const img = images[index] || images[0];
@@ -184,23 +181,83 @@
       );
     }
 
-    // =========================
-    // LOGIN
-    // =========================
-    function LoginPage({ onLogin }) {
-      const [tab, setTab] = useState('customer'); // 'customer' | 'admin'
-      // Kund (OTP)
+    /* =========================
+       LOGIN
+       ========================= */
+    function AuthPage({ onLogin }) {
+      const [tab, setTab] = useState('admin'); // admin | customer
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl">
+            <div className="bg-white rounded-2xl shadow-2xl grid md:grid-cols-2 overflow-hidden">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white p-8">
+                <h1 className="text-4xl font-bold mb-2">🏗️ Byggflöde</h1>
+                <p className="opacity-90">Dela uppdateringar och bilder i realtid med dina kunder.</p>
+                <div className="mt-8 text-sm opacity-90">
+                  <p>• Admin loggar in med användarnamn + 6-siffrig kod</p>
+                  <p>• Kunder loggar in med e-post + engångskod</p>
+                </div>
+              </div>
+              <div className="p-8">
+                <div className="flex gap-2 mb-6">
+                  <button onClick={()=>setTab('admin')} className={"flex-1 px-4 py-2 rounded-lg " + (tab==='admin' ? 'bg-blue-600 text-white' : 'bg-gray-100')}>
+                    Admin
+                  </button>
+                  <button onClick={()=>setTab('customer')} className={"flex-1 px-4 py-2 rounded-lg " + (tab==='customer' ? 'bg-blue-600 text-white' : 'bg-gray-100')}>
+                    Kund
+                  </button>
+                </div>
+                {tab==='admin' ? <AdminLogin onLogin={onLogin}/> : <CustomerLogin onLogin={onLogin}/>}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AdminLogin({ onLogin }) {
+      const [username, setUsername] = useState('admin');
+      const [password, setPassword] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+
+      const submit = async (e) => {
+        e.preventDefault();
+        setLoading(true); setError('');
+        try {
+          const res = await api.post('auth/admin-login', { username, password });
+          if (!res.success) throw new Error(res.error || 'Fel inloggning');
+          const me = await api.get('me', { session: res.sessionToken });
+          onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'admin' });
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
+      };
+
+      return (
+        <form onSubmit={submit} className="space-y-4">
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
+            <input value={username} onChange={(e)=>setUsername(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
+            <input value={password} onChange={(e)=>setPassword(e.target.value)} inputMode="numeric" pattern="\d{6}" maxLength="6"
+                   className="w-full px-3 py-2 border rounded-lg" placeholder="••••••" required />
+          </div>
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+            {loading ? 'Loggar in…' : 'Logga in som admin'}
+          </button>
+        </form>
+      );
+    }
+
+    function CustomerLogin({ onLogin }) {
       const [email, setEmail] = useState('');
       const [otpSent, setOtpSent] = useState(false);
       const [otp, setOtp] = useState('');
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState('');
-
-      // Admin
-      const [adminUser, setAdminUser] = useState('admin');
-      const [adminPass, setAdminPass] = useState('');
-      const [adminError, setAdminError] = useState('');
-      const [adminLoading, setAdminLoading] = useState(false);
 
       const requestOTP = async (e) => {
         e.preventDefault();
@@ -209,9 +266,7 @@
           const res = await api.post('auth/request-otp', { email, projectId: '' });
           if (!res.success) throw new Error(res.error || 'Kunde inte skicka kod');
           setOtpSent(true);
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       const verifyOTP = async (e) => {
@@ -222,104 +277,44 @@
           if (!res.success) throw new Error(res.error || 'Ogiltig kod');
           const me = await api.get('me', { session: res.sessionToken });
           onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'customer' });
-        } catch (err) {
-          setError(err.message);
-        } finally { setLoading(false); }
-      };
-
-      const adminLogin = async (e) => {
-        e.preventDefault();
-        setAdminLoading(true); setAdminError('');
-        try {
-          const r = await api.post('auth/admin-login', { username: adminUser, password: adminPass });
-          if (!r.success) throw new Error(r.error || 'Fel inloggning');
-          // Hämta roll från backend
-          const me = await api.get('me', { session: r.sessionToken });
-          // Om me inte flaggar admin (t.ex. om admin-email saknar konto): anta admin för UI
-          const role = me?.role === 'admin' ? 'admin' : 'admin';
-          onLogin({ email: r.email, sessionToken: r.sessionToken, role });
-        } catch (err) {
-          setAdminError(err.message);
-        } finally { setAdminLoading(false); }
+        } catch (err) { setError(err.message); } finally { setLoading(false); }
       };
 
       return (
-        <div className="min-h-screen flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-            <div className="text-center mb-6">
-              <h1 className="text-4xl font-bold text-gray-800 mb-2">🏗️ Byggflöde</h1>
-              <p className="text-gray-600">Följ och uppdatera dina byggprojekt</p>
-            </div>
-
-            <div className="flex mb-6 rounded-lg overflow-hidden border">
-              <button className={"flex-1 py-2 font-semibold " + (tab==='customer' ? 'bg-blue-600 text-white' : 'bg-gray-50')}
-                      onClick={()=>setTab('customer')}>Kund</button>
-              <button className={"flex-1 py-2 font-semibold " + (tab==='admin' ? 'bg-blue-600 text-white' : 'bg-gray-50')}
-                      onClick={()=>setTab('admin')}>Admin</button>
-            </div>
-
-            {tab==='customer' ? (
-              <>
-                {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-                {!otpSent ? (
-                  <form onSubmit={requestOTP}>
-                    <div className="mb-6">
-                      <label className="block text-gray-700 font-semibold mb-2">E-post</label>
-                      <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="din@email.com" required/>
-                    </div>
-                    <button type="submit" disabled={loading}
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition">
-                      {loading ? 'Skickar…' : 'Skicka inloggningskod'}
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={verifyOTP}>
-                    <div className="mb-4 text-center text-green-600">✓ Kod skickad till {email}</div>
-                    <div className="mb-6">
-                      <label className="block text-gray-700 font-semibold mb-2">Ange 6-siffrig kod</label>
-                      <input type="text" value={otp} onChange={(e)=>setOtp(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
-                        placeholder="123456" maxLength="6" required />
-                    </div>
-                    <button type="submit" disabled={loading}
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition mb-3">
-                      {loading ? 'Verifierar…' : 'Logga in'}
-                    </button>
-                    <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">Skicka ny kod</button>
-                  </form>
-                )}
-              </>
-            ) : (
-              <>
-                {adminError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{adminError}</div>}
-                <form onSubmit={adminLogin}>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 font-semibold mb-2">Användarnamn</label>
-                    <input value={adminUser} onChange={(e)=>setAdminUser(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="admin" required/>
-                  </div>
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-semibold mb-2">Lösenord (6 siffror)</label>
-                    <input type="password" value={adminPass} onChange={(e)=>setAdminPass(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••" maxLength="6" required/>
-                  </div>
-                  <button type="submit" disabled={adminLoading}
-                    className="w-full bg-gray-800 text-white font-semibold py-3 rounded-lg hover:bg-gray-900 disabled:opacity-50 transition">
-                    {adminLoading ? 'Loggar in…' : 'Logga in som admin'}
-                  </button>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
+        <>
+          {!otpSent ? (
+            <form onSubmit={requestOTP} className="space-y-4">
+              {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">E-post</label>
+                <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="din@email.com" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+                {loading ? 'Skickar…' : 'Skicka inloggningskod'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={verifyOTP} className="space-y-4">
+              {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+              <div className="text-green-700">✓ Kod skickad till {email}</div>
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1">Ange kod</label>
+                <input value={otp} onChange={(e)=>setOtp(e.target.value)} maxLength="6" inputMode="numeric"
+                       className="w-full px-3 py-2 border rounded-lg text-center text-2xl tracking-widest" placeholder="123456" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
+                {loading ? 'Verifierar…' : 'Logga in'}
+              </button>
+              <button type="button" onClick={()=>setOtpSent(false)} className="w-full text-gray-600 hover:text-gray-800">Skicka ny kod</button>
+            </form>
+          )}
+        </>
       );
     }
 
-    // =========================
-    // GEMENSAMMA UI-BLOCK
-    // =========================
+    /* =========================
+       GEMENSAMMA UI-BLOCK
+       ========================= */
     function Header({ email, role, onLogout }) {
       return (
         <header className="bg-white shadow">
@@ -444,9 +439,9 @@
       );
     }
 
-    // =========================
-    // MODALER (Admin)
-    // =========================
+    /* =========================
+       MODALER (Admin)
+       ========================= */
     function CreateAccountModal({ isOpen, onClose, session }) {
       const [email, setEmail] = useState('');
       const [name, setName] = useState('');
@@ -510,10 +505,12 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
-        const validSteps = steps.map(s=>s.trim()).filter(Boolean);
-        if (validSteps.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
+        const valid = steps.map(s=>s.trim()).filter(Boolean);
+        if (valid.length===0) { setError('Lägg till minst ett steg'); setLoading(false); return; }
         try {
-          const res = await api.post('project/create', { session: session.sessionToken, name, description, steps: validSteps.join(',') });
+          const res = await api.post('project/create', {
+            session: session.sessionToken, name, description, steps: valid.join(',')
+          });
           if (!res.success) throw new Error(res.error || 'Kunde inte skapa projekt');
           onSuccess && onSuccess(); onClose(); setName(''); setDescription(''); setSteps(['']);
         } catch (err) { setError(err.message); } finally { setLoading(false); }
@@ -615,6 +612,7 @@
       const handleSubmit = async (e) => {
         e.preventDefault(); setLoading(true); setError('');
         try {
+          // Parallell uppladdning
           const uploads = await Promise.all((files || []).map(async (f) => {
             const base64 = await readFileAsBase64(f);
             return api.post('file/upload', {
@@ -660,12 +658,12 @@
       );
     }
 
-    // =========================
-    // PROJEKTVYER
-    // =========================
+    /* =========================
+       PROJEKTVYER
+       ========================= */
     function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
       const isCompleted = step.status === 'completed';
-      const [showCreatePost, setShowCreatePost] = useState(false);
+      const [showCreatePost, setShowCreatePost] = React.useState(false);
 
       return (
         <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
@@ -741,7 +739,7 @@
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
                     {post.images.map((img,i)=>(
                       <img key={i}
-                        src={img.thumbnailUrl}
+                        src={img.thumbnailUrl || img.directUrl}
                         loading="lazy"
                         alt="Bild"
                         className="rounded-lg w-full h-44 object-cover cursor-pointer hover:opacity-90"
@@ -844,9 +842,9 @@
       );
     }
 
-    // =========================
-    // HUVUDAPP
-    // =========================
+    /* =========================
+       HUVUDAPP
+       ========================= */
     function App() {
       const [session, setSession] = useState(null); // {email, sessionToken, role}
       const [loadingApp, setLoadingApp] = useState(true);
@@ -892,9 +890,16 @@
         );
       }
 
-      if (!session) return <LoginPage onLogin={onLogin} />;
+      if (!session) return <AuthPage onLogin={onLogin} />;
 
-      // Om projekt öppnats → visa projektsida
+      const isAdmin = session.role === 'admin';
+
+      // Om kund och bara ett projekt → direkt in i det
+      if (!isAdmin && projects.length === 1 && !selectedProject) {
+        setSelectedProject(projects[0]);
+        return null;
+      }
+
       if (selectedProject) {
         return (
           <>
@@ -910,14 +915,7 @@
         );
       }
 
-      const isAdmin = session.role === 'admin';
-
-      // Kund: om bara ett projekt → öppna direkt feed
-      if (!isAdmin && projects.length === 1) {
-        setSelectedProject(projects[0]);
-        return null;
-      }
-
+      // ROOT DASHBOARD
       return (
         <>
           <Header email={session.email} role={session.role} onLogout={onLogout}/>
