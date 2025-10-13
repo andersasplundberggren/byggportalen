@@ -29,81 +29,77 @@
     /* =========================
        KONFIG
        ========================= */
-    // BYT till din Apps Script Web App URL (slutar på /exec)
     const API_URL = 'https://script.google.com/macros/s/AKfycbzA151Db9RytanxMcMYy_0EhMHRH3riPDLUZ2OkwIIexBGYjs3aMdiy6vxPGH2nRLs/exec';
 
     /* =========================
        API-HJÄLPARE
        ========================= */
-  /* =========================
-   API-HJÄLPARE (FIXAD VERSION)
-   ========================= */
-const api = {
-  async get(path, params = {}) {
-    const url = new URL(API_URL);
-    url.searchParams.set('path', path);
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== null && v !== undefined) {
-        url.searchParams.set(k, String(v));
-      }
-    });
-    
-    console.log('GET Request:', url.toString());
-    
-    try {
-      const res = await fetch(url.toString(), { 
-        method: 'GET',
-        redirect: 'follow'
-      });
-      const data = await res.json();
-      console.log('GET Response:', data);
-      return data;
-    } catch (error) {
-      console.error('GET Error:', error);
-      throw error;
-    }
-  },
-  
-  async post(path, data = {}) {
-    const form = new URLSearchParams();
-    form.set('path', path);
-    
-    Object.entries(data).forEach(([k, v]) => {
-      if (v !== null && v !== undefined) {
-        form.append(k, String(v));
-      }
-    });
-    
-    console.log('POST Request to:', API_URL);
-    console.log('POST Data:', Object.fromEntries(form));
-    
-    try {
-      const res = await fetch(API_URL, { 
-        method: 'POST', 
-        body: form,
-        redirect: 'follow',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+    const api = {
+      async get(path, params = {}) {
+        const url = new URL(API_URL);
+        url.searchParams.set('path', path);
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== null && v !== undefined) {
+            url.searchParams.set(k, String(v));
+          }
+        });
+        
+        console.log('GET Request:', url.toString());
+        
+        try {
+          const res = await fetch(url.toString(), { 
+            method: 'GET',
+            redirect: 'follow'
+          });
+          const data = await res.json();
+          console.log('GET Response:', data);
+          return data;
+        } catch (error) {
+          console.error('GET Error:', error);
+          throw error;
         }
-      });
+      },
       
-      const responseText = await res.text();
-      console.log('POST Response (raw):', responseText);
-      
-      try {
-        const data = JSON.parse(responseText);
-        console.log('POST Response (parsed):', data);
-        return data;
-      } catch (e) {
-        console.error('Failed to parse JSON:', responseText);
-        return { success: false, error: 'Invalid response from server' };
+      async post(path, data = {}) {
+        const form = new URLSearchParams();
+        form.set('path', path);
+        
+        Object.entries(data).forEach(([k, v]) => {
+          if (v !== null && v !== undefined) {
+            form.append(k, String(v));
+          }
+        });
+        
+        console.log('POST Request to:', API_URL);
+        console.log('POST Data:', Object.fromEntries(form));
+        
+        try {
+          const res = await fetch(API_URL, { 
+            method: 'POST', 
+            body: form,
+            redirect: 'follow',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+          
+          const responseText = await res.text();
+          console.log('POST Response (raw):', responseText);
+          
+          try {
+            const data = JSON.parse(responseText);
+            console.log('POST Response (parsed):', data);
+            return data;
+          } catch (e) {
+            console.error('Failed to parse JSON:', responseText);
+            return { success: false, error: 'Invalid response from server' };
+          }
+        } catch (error) {
+          console.error('POST Error:', error);
+          throw error;
+        }
       }
-    } catch (error) {
-      console.error('POST Error:', error);
-      throw error;
-    }
-  }
-};
+    };
 
     /* =========================
        UI: Modal
@@ -238,7 +234,7 @@ const api = {
        LOGIN
        ========================= */
     function AuthPage({ onLogin }) {
-      const [tab, setTab] = useState('admin'); // admin | customer
+      const [tab, setTab] = useState('admin');
 
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
@@ -270,88 +266,85 @@ const api = {
     }
 
     function AdminLogin({ onLogin }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+      const [username, setUsername] = useState('admin');
+      const [password, setPassword] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setLoading(true); 
-    setError('');
-    
-    console.log('Försöker logga in med:', { username, password });
-    
-    try {
-      const res = await api.post('auth/admin-login', { username, password });
-      
-      console.log('Backend svar:', res);
-      
-      if (!res.success) {
-        throw new Error(res.error || 'Fel inloggning');
-      }
-      
-      // Kontrollera att vi fick ett sessionToken
-      if (!res.sessionToken) {
-        throw new Error('Ingen sessionToken mottagen');
-      }
-      
-      console.log('SessionToken mottagen:', res.sessionToken);
-      
-      // Hämta användarinfo
-      const me = await api.get('me', { session: res.sessionToken });
-      
-      console.log('Me response:', me);
-      
-      // Logga in användaren
-      onLogin({ 
-        email: res.email, 
-        sessionToken: res.sessionToken, 
-        role: me?.role || 'admin' 
-      });
-      
-    } catch (err) { 
-      console.error('Inloggningsfel:', err);
-      setError(err.message); 
-    } finally { 
-      setLoading(false); 
+      const submit = async (e) => {
+        e.preventDefault();
+        setLoading(true); 
+        setError('');
+        
+        console.log('Försöker logga in med:', { username, password });
+        
+        try {
+          const res = await api.post('auth/admin-login', { username, password });
+          
+          console.log('Backend svar:', res);
+          
+          if (!res.success) {
+            throw new Error(res.error || 'Fel inloggning');
+          }
+          
+          if (!res.sessionToken) {
+            throw new Error('Ingen sessionToken mottagen');
+          }
+          
+          console.log('SessionToken mottagen:', res.sessionToken);
+          
+          const me = await api.get('me', { session: res.sessionToken });
+          
+          console.log('Me response:', me);
+          
+          onLogin({ 
+            email: res.email, 
+            sessionToken: res.sessionToken, 
+            role: me?.role || 'admin' 
+          });
+          
+        } catch (err) { 
+          console.error('Inloggningsfel:', err);
+          setError(err.message); 
+        } finally { 
+          setLoading(false); 
+        }
+      };
+
+      return (
+        <form onSubmit={submit} className="space-y-4">
+          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
+            <input 
+              value={username} 
+              onChange={(e)=>setUsername(e.target.value)} 
+              className="w-full px-3 py-2 border rounded-lg" 
+              required 
+              autoComplete="username"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
+            <input 
+              type="text"
+              value={password} 
+              onChange={(e)=>setPassword(e.target.value)} 
+              inputMode="numeric" 
+              pattern="\d{6}" 
+              maxLength="6"
+              className="w-full px-3 py-2 border rounded-lg" 
+              placeholder="••••••" 
+              required 
+              autoComplete="current-password"
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
+            {loading ? 'Loggar in…' : 'Logga in som admin'}
+          </button>
+        </form>
+      );
     }
-  };
-
-  return (
-    <form onSubmit={submit} className="space-y-4">
-      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
-      <div>
-        <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
-        <input 
-          value={username} 
-          onChange={(e)=>setUsername(e.target.value)} 
-          className="w-full px-3 py-2 border rounded-lg" 
-          required 
-          autoComplete="username"
-        />
-      </div>
-      <div>
-        <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
-        <input 
-          type="text"
-          value={password} 
-          onChange={(e)=>setPassword(e.target.value)} 
-          inputMode="numeric" 
-          pattern="\d{6}" 
-          maxLength="6"
-          className="w-full px-3 py-2 border rounded-lg" 
-          placeholder="••••••" 
-          required 
-          autoComplete="current-password"
-        />
-      </div>
-      <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
-        {loading ? 'Loggar in…' : 'Logga in som admin'}
-      </button>
-    </form>
-  );
-}
 
     function CustomerLogin({ onLogin }) {
       const [email, setEmail] = useState('');
@@ -720,6 +713,87 @@ const api = {
       );
     }
 
+    function MembersModal({ isOpen, onClose, project, session }) {
+      const [members, setMembers] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        if (isOpen) loadMembers();
+      }, [isOpen]);
+
+      const loadMembers = async () => {
+        setLoading(true);
+        try {
+          const res = await api.get('project/members', { 
+            projectId: project.project_id, 
+            session: session.sessionToken 
+          });
+          if (res.success) {
+            setMembers(res.members || []);
+          }
+        } catch (err) {
+          console.error('Kunde inte ladda medlemmar:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const removeMember = async (memberEmail) => {
+        if (!window.confirm(`Ta bort ${memberEmail} från projektet?`)) return;
+        
+        try {
+          const res = await api.post('project/remove-member', {
+            session: session.sessionToken,
+            projectId: project.project_id,
+            memberEmail
+          });
+          
+          if (res.success) {
+            loadMembers();
+          } else {
+            alert('Kunde inte ta bort medlem: ' + (res.error || 'Okänt fel'));
+          }
+        } catch (err) {
+          alert('Fel: ' + err.message);
+        }
+      };
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Medlemmar i ${project.name}`}>
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="inline-block w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+            </div>
+          ) : members.length === 0 ? (
+            <div className="text-gray-600 text-center py-8">Inga medlemmar än</div>
+          ) : (
+            <div className="space-y-2">
+              {members.map((m, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-800">{m.email}</div>
+                    <div className="text-sm text-gray-500">
+                      {m.role === 'admin' ? '👑 Admin' : '👤 Kund'} • 
+                      Tillagd {new Date(m.added_at).toLocaleDateString('sv-SE')}
+                      {m.notify_on_post && ' • 🔔 Notiser på'}
+                    </div>
+                  </div>
+                  {m.role !== 'admin' && (
+                    <button 
+                      onClick={() => removeMember(m.email)}
+                      className="text-red-600 hover:text-red-800 text-sm px-3 py-1 rounded border border-red-300 hover:bg-red-50"
+                    >
+                      Ta bort
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      );
+    }
+
     function CreatePostModal({ isOpen, onClose, step, projectId, session, onSuccess }) {
       const [text, setText] = useState('');
       const [files, setFiles] = useState([]);
@@ -787,29 +861,69 @@ const api = {
     /* =========================
        PROJEKTVYER
        ========================= */
-    function StepCompactCard({ step, index, projectId, session, userRole, onPost }) {
+    function StepCompactCard({ step, index, projectId, session, userRole, onPost, onStepComplete }) {
       const isCompleted = step.status === 'completed';
-      const [showCreatePost, setShowCreatePost] = React.useState(false);
+      const [showCreatePost, setShowCreatePost] = useState(false);
+      const [completing, setCompleting] = useState(false);
+
+      const markComplete = async () => {
+        if (!window.confirm(`Markera "${step.step_name}" som klart?`)) return;
+        setCompleting(true);
+        try {
+          const res = await api.post('step/complete', { 
+            session: session.sessionToken, 
+            stepId: step.step_id 
+          });
+          if (res.success) {
+            onStepComplete && onStepComplete();
+          } else {
+            alert('Kunde inte markera som klart: ' + (res.error || 'Okänt fel'));
+          }
+        } catch (err) {
+          alert('Fel: ' + err.message);
+        } finally {
+          setCompleting(false);
+        }
+      };
 
       return (
-        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${isCompleted ? 'bg-green-500 text-white':'bg-gray-200 text-gray-700'}`}>
-            {isCompleted ? '✓' : index + 1}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h3 className="font-bold text-gray-800">{step.step_name}</h3>
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Inlägg: {step.post_count}</span>
-              <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">Bilder: {step.image_count}</span>
-              {isCompleted && <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Klar</span>}
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${isCompleted ? 'bg-green-500 text-white':'bg-gray-200 text-gray-700'}`}>
+              {isCompleted ? '✓' : index + 1}
             </div>
-            <div className="text-xs text-gray-500">
-              {isCompleted ? `Klart ${step.completed_at ? new Date(step.completed_at).toLocaleDateString('sv-SE') : ''}` : 'Pågående'}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="font-bold text-gray-800">{step.step_name}</h3>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Inlägg: {step.post_count}</span>
+                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">Bilder: {step.image_count}</span>
+                {isCompleted && <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Klart</span>}
+              </div>
+              <div className="text-xs text-gray-500">
+                {isCompleted ? `Klart ${step.completed_at ? new Date(step.completed_at).toLocaleDateString('sv-SE') : ''}` : 'Pågående'}
+              </div>
             </div>
+            {userRole==='admin' && (
+              <div className="flex gap-2 flex-shrink-0">
+                {!isCompleted && (
+                  <button 
+                    onClick={markComplete} 
+                    disabled={completing}
+                    className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:bg-gray-400"
+                  >
+                    {completing ? '...' : '✓ Markera klar'}
+                  </button>
+                )}
+                <button 
+                  onClick={()=>setShowCreatePost(true)} 
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                >
+                  + Inlägg
+                </button>
+              </div>
+            )}
           </div>
-          {userRole==='admin' && (
-            <button onClick={()=>setShowCreatePost(true)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">+ Inlägg</button>
-          )}
+          
           <CreatePostModal
             isOpen={showCreatePost}
             onClose={()=>setShowCreatePost(false)}
@@ -897,6 +1011,8 @@ const api = {
       const [stepsWithCounts, setStepsWithCounts] = useState([]);
       const [loadingCounts, setLoadingCounts] = useState(true);
       const [tab, setTab] = useState('feed');
+      const [showInviteMember, setShowInviteMember] = useState(false);
+      const [showMembers, setShowMembers] = useState(false);
 
       const loadStepsWithCounts = async () => {
         setLoadingCounts(true);
@@ -904,6 +1020,7 @@ const api = {
         if (res.success) setStepsWithCounts(res.steps || []);
         setLoadingCounts(false);
       };
+      
       useEffect(()=>{ loadStepsWithCounts(); }, [project.project_id]);
 
       const pct = Number(project.completion_percentage || 0);
@@ -917,6 +1034,16 @@ const api = {
                 <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
               </div>
               <div className="flex items-center gap-2">
+                {userRole==='admin' && (
+                  <>
+                    <button onClick={()=>setShowMembers(true)} className="text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg border">
+                      👥 Medlemmar
+                    </button>
+                    <button onClick={()=>setShowInviteMember(true)} className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700">
+                      + Bjud in kund
+                    </button>
+                  </>
+                )}
                 <button onClick={onLogout} className="text-red-600 hover:text-red-800">Logga ut</button>
               </div>
             </div>
@@ -957,12 +1084,27 @@ const api = {
                       session={session}
                       userRole={userRole}
                       onPost={()=>{ loadStepsWithCounts(); }}
+                      onStepComplete={()=>{ loadStepsWithCounts(); }}
                     />
                   ))}
                 </div>
               )
             )}
           </main>
+
+          <InviteMemberModal 
+            isOpen={showInviteMember} 
+            onClose={()=>setShowInviteMember(false)} 
+            project={project} 
+            session={session}
+          />
+          
+          <MembersModal
+            isOpen={showMembers}
+            onClose={()=>setShowMembers(false)}
+            project={project}
+            session={session}
+          />
         </div>
       );
     }
