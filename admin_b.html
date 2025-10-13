@@ -217,40 +217,88 @@
     }
 
     function AdminLogin({ onLogin }) {
-      const [username, setUsername] = useState('admin');
-      const [password, setPassword] = useState('');
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState('');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-      const submit = async (e) => {
-        e.preventDefault();
-        setLoading(true); setError('');
-        try {
-          const res = await api.post('auth/admin-login', { username, password });
-          if (!res.success) throw new Error(res.error || 'Fel inloggning');
-          const me = await api.get('me', { session: res.sessionToken });
-          onLogin({ email: res.email, sessionToken: res.sessionToken, role: me?.role || 'admin' });
-        } catch (err) { setError(err.message); } finally { setLoading(false); }
-      };
-
-      return (
-        <form onSubmit={submit} className="space-y-4">
-          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
-          <div>
-            <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
-            <input value={username} onChange={(e)=>setUsername(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
-          </div>
-          <div>
-            <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
-            <input value={password} onChange={(e)=>setPassword(e.target.value)} inputMode="numeric" pattern="\d{6}" maxLength="6"
-                   className="w-full px-3 py-2 border rounded-lg" placeholder="••••••" required />
-          </div>
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg">
-            {loading ? 'Loggar in…' : 'Logga in som admin'}
-          </button>
-        </form>
-      );
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true); 
+    setError('');
+    
+    console.log('Försöker logga in med:', { username, password });
+    
+    try {
+      const res = await api.post('auth/admin-login', { username, password });
+      
+      console.log('Backend svar:', res);
+      
+      if (!res.success) {
+        throw new Error(res.error || 'Fel inloggning');
+      }
+      
+      // Kontrollera att vi fick ett sessionToken
+      if (!res.sessionToken) {
+        throw new Error('Ingen sessionToken mottagen');
+      }
+      
+      console.log('SessionToken mottagen:', res.sessionToken);
+      
+      // Hämta användarinfo
+      const me = await api.get('me', { session: res.sessionToken });
+      
+      console.log('Me response:', me);
+      
+      // Logga in användaren
+      onLogin({ 
+        email: res.email, 
+        sessionToken: res.sessionToken, 
+        role: me?.role || 'admin' 
+      });
+      
+    } catch (err) { 
+      console.error('Inloggningsfel:', err);
+      setError(err.message); 
+    } finally { 
+      setLoading(false); 
     }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+      <div>
+        <label className="block text-gray-700 font-semibold mb-1">Användarnamn</label>
+        <input 
+          value={username} 
+          onChange={(e)=>setUsername(e.target.value)} 
+          className="w-full px-3 py-2 border rounded-lg" 
+          required 
+          autoComplete="username"
+        />
+      </div>
+      <div>
+        <label className="block text-gray-700 font-semibold mb-1">Lösenord (6 siffror)</label>
+        <input 
+          type="text"
+          value={password} 
+          onChange={(e)=>setPassword(e.target.value)} 
+          inputMode="numeric" 
+          pattern="\d{6}" 
+          maxLength="6"
+          className="w-full px-3 py-2 border rounded-lg" 
+          placeholder="••••••" 
+          required 
+          autoComplete="current-password"
+        />
+      </div>
+      <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
+        {loading ? 'Loggar in…' : 'Logga in som admin'}
+      </button>
+    </form>
+  );
+}
 
     function CustomerLogin({ onLogin }) {
       const [email, setEmail] = useState('');
