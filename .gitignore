@@ -1,16 +1,59 @@
 # Miljövariabler och känslig data
 .env
 .env.local
+.env.production
 config.local.js
+config.production.js
 
 # Personliga inställningar
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # Backup-filer
 *.bak
-*~
+*.backup
+*.tmp
 
 # OS-filer
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Node modules (om du senare använder npm/yarn)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build-filer
+dist/
+build/
+*.min.js
+*.min.css
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Test-filer
+*.test.js
+__tests__/
+
+# Dokumentation som innehåller känslig data
+docs/private/
+notes.txt
+TODO.txt
